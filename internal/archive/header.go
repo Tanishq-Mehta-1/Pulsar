@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-const fzSignature = 0x11213141
+const fzHeaderSignature = 0x11213141
 
 // 12-byte archive header
 type Header struct {
@@ -36,7 +36,7 @@ func DeserializeHeader(header_buffer [12]byte) (*Header, error) {
 	reserved := binary.BigEndian.Uint32(header_buffer[8:])
 
 	//signature check
-	if signature != fzSignature {
+	if signature != fzHeaderSignature {
 		return nil, errors.New("invalid file signature")
 	}
 

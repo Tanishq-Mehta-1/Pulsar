@@ -12,9 +12,11 @@ const (
 	Basic CompressionMethod = 1
 )
 
-// 31 + variable bytes
+const FileEntryLength int = 30
+
+// FileEntryLength + variable bytes
 type FileEntry struct {
-	FilenameLength    uint16            //2 bytes
+	FilenameLength    uint8             //1 bytes
 	Filename          string            //variable
 	DataOffset        uint64            //8 bytes
 	OriginalSize      uint64            //8 bytes
@@ -39,15 +41,15 @@ func SerializeFileEntry(entry *FileEntry) ([]byte, error) {
 		return nil, errors.New("filename length does not match")
 	}
 
-	buffer := make([]byte, 31+filenameLen)
+	buffer := make([]byte, FileEntryLength+filenameLen)
 
-	binary.BigEndian.PutUint16(buffer[0:2], entry.FilenameLength)
-	copy(buffer[2:2+filenameLen], entry.Filename)
-	binary.BigEndian.PutUint64(buffer[2+filenameLen:10+filenameLen], entry.DataOffset)
-	binary.BigEndian.PutUint64(buffer[10+filenameLen:18+filenameLen], entry.OriginalSize)
-	binary.BigEndian.PutUint64(buffer[18+filenameLen:26+filenameLen], entry.CompressedSize)
-	copy(buffer[26+filenameLen:27+filenameLen], []byte{(byte(entry.CompressionMethod))})
-	binary.BigEndian.PutUint32(buffer[27+filenameLen:], entry.Checksum)
+	copy(buffer[0:1], []byte{(byte(entry.FilenameLength))})
+	copy(buffer[1:1+filenameLen], entry.Filename)
+	binary.BigEndian.PutUint64(buffer[1+filenameLen:9+filenameLen], entry.DataOffset)
+	binary.BigEndian.PutUint64(buffer[9+filenameLen:17+filenameLen], entry.OriginalSize)
+	binary.BigEndian.PutUint64(buffer[17+filenameLen:25+filenameLen], entry.CompressedSize)
+	copy(buffer[25+filenameLen:26+filenameLen], []byte{(byte(entry.CompressionMethod))})
+	binary.BigEndian.PutUint32(buffer[26+filenameLen:], entry.Checksum)
 
 	return buffer, nil
 }
@@ -58,19 +60,19 @@ func DeserializeFileEntry(data []byte) (*FileEntry, int, error) {
 		return nil, 0, errors.New("invalid size: file entry too small")
 	}
 
-	filenameLen := binary.BigEndian.Uint16(data[:2])
+	filenameLen := data[:1][0]
 
 	//validate size
-	if len(data) < int(filenameLen)+31 {
+	if len(data) < int(filenameLen)+FileEntryLength {
 		return nil, 0, errors.New("invalid size: file entry doesn't match size")
 	}
 
-	filename := string(data[2 : 2+filenameLen])
-	dataOffset := binary.BigEndian.Uint64(data[2+filenameLen : 10+filenameLen])
-	originalSize := binary.BigEndian.Uint64(data[10+filenameLen : 18+filenameLen])
-	compressedSize := binary.BigEndian.Uint64(data[18+filenameLen : 26+filenameLen])
-	compressionMethod := CompressionMethod(data[26+filenameLen : 27+filenameLen][0])
-	checksum := binary.BigEndian.Uint32(data[27+filenameLen : 31+filenameLen])
+	filename := string(data[1 : 1+filenameLen])
+	dataOffset := binary.BigEndian.Uint64(data[1+filenameLen : 9+filenameLen])
+	originalSize := binary.BigEndian.Uint64(data[9+filenameLen : 17+filenameLen])
+	compressedSize := binary.BigEndian.Uint64(data[17+filenameLen : 25+filenameLen])
+	compressionMethod := CompressionMethod(data[25+filenameLen : 26+filenameLen][0])
+	checksum := binary.BigEndian.Uint32(data[26+filenameLen : FileEntryLength+int(filenameLen)])
 
 	//validate compressionMethod
 	switch compressionMethod {
@@ -87,5 +89,5 @@ func DeserializeFileEntry(data []byte) (*FileEntry, int, error) {
 		CompressedSize:    compressedSize,
 		CompressionMethod: compressionMethod,
 		Checksum:          checksum,
-	}, int(31 + filenameLen), nil
+	}, FileEntryLength + int(filenameLen), nil
 }
