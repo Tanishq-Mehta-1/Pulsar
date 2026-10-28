@@ -6,8 +6,9 @@ import (
 )
 
 const fzFooterSignature = 0x51617181
+const FooterSize int = 24
 
-// 12-byte archive header
+// 24-byte archive footer
 type Footer struct {
 	Signature       uint32
 	DirectoryOffset uint64
@@ -16,52 +17,34 @@ type Footer struct {
 }
 
 // big Endian Representation
-func SerializeFooter(footer *Footer) [12]byte {
+func SerializeFooter(footer *Footer) [FooterSize]byte {
 
-	var byte_header [12]byte
+	var byte_footer [FooterSize]byte
 
-	binary.BigEndian.PutUint32(byte_header[:4], header.Signature)
-	binary.BigEndian.PutUint16(byte_header[4:6], header.Version)
-	binary.BigEndian.PutUint16(byte_header[6:8], header.Flags)
-	binary.BigEndian.PutUint32(byte_header[8:], header.Reserved)
+	binary.BigEndian.PutUint32(byte_footer[:4], footer.Signature)
+	binary.BigEndian.PutUint64(byte_footer[4:12], footer.DirectoryOffset)
+	binary.BigEndian.PutUint64(byte_footer[12:20], footer.DirectorySize)
+	binary.BigEndian.PutUint32(byte_footer[20:], footer.EntryCount)
 
-	return byte_header
+	return byte_footer
 }
 
-func DeserializeFooter(header_buffer [12]byte) (*Header, error) {
+func DeserializeFooter(footer_buffer [FooterSize]byte) (*Footer, error) {
 
-	signature := binary.BigEndian.Uint32(header_buffer[:4])
-	version := binary.BigEndian.Uint16(header_buffer[4:6])
-	flags := binary.BigEndian.Uint16(header_buffer[6:8])
-	reserved := binary.BigEndian.Uint32(header_buffer[8:])
+	signature := binary.BigEndian.Uint32(footer_buffer[:4])
+	directoryOffset := binary.BigEndian.Uint64(footer_buffer[4:12])
+	directorySize := binary.BigEndian.Uint64(footer_buffer[12:20])
+	entryCount := binary.BigEndian.Uint32(footer_buffer[20:])
 
 	//signature check
 	if signature != fzFooterSignature {
-		return nil, errors.New("invalid file signature")
+		return nil, errors.New("invalid file footer signature")
 	}
 
-	//version check
-	switch version {
-	case 1:
-		break
-	default:
-		return nil, errors.New("invalid archive version")
-	}
-
-	//flag check
-	if flags != 0 {
-		return nil, errors.New("invalid flags")
-	}
-
-	//reserved check
-	if reserved != 0 {
-		return nil, errors.New("invalid reserved bytes")
-	}
-
-	return &Header{
-		Signature: signature,
-		Version:   version,
-		Flags:     flags,
-		Reserved:  reserved}, nil
+	return &Footer{
+		Signature:       signature,
+		DirectoryOffset: directoryOffset,
+		DirectorySize:   directorySize,
+		EntryCount:      entryCount}, nil
 
 }

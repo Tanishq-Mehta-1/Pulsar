@@ -32,7 +32,7 @@ func SerializeFileEntry(entry *FileEntry) ([]byte, error) {
 	}
 
 	filenameLen := len(entry.Filename)
-	if filenameLen > 65535 {
+	if filenameLen > 255 {
 		return nil, errors.New("filename too long")
 	}
 
@@ -56,7 +56,7 @@ func SerializeFileEntry(entry *FileEntry) ([]byte, error) {
 
 func DeserializeFileEntry(data []byte) (*FileEntry, int, error) {
 
-	if len(data) < 2 {
+	if len(data) < FileEntryLength {
 		return nil, 0, errors.New("invalid size: file entry too small")
 	}
 

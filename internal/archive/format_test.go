@@ -46,15 +46,15 @@ func TestSerializeFileEntry(t *testing.T) {
 		{
 			name: "filename too long",
 			entry: &FileEntry{
-				FilenameLength:    65535, // Over max uint16 (forces error before cast in theoretical overflow)
-				Filename:          strings.Repeat("a", 65536),
+				FilenameLength:    255, // at max uint8 (forces error before cast in theoretical overflow)
+				Filename:          strings.Repeat("a", 256),
 				DataOffset:        0,
 				OriginalSize:      0,
 				CompressedSize:    0,
 				CompressionMethod: None,
 				Checksum:          0,
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 	}
 

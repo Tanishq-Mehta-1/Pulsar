@@ -6,7 +6,7 @@ func TestSerializeHeader(t *testing.T) {
 
 	//test signature
 	header := &Header{
-		Signature: fzSignature, // 0x11213141
+		Signature: fzHeaderSignature, // 0x11213141
 		Version:   1,
 		Flags:     0,
 		Reserved:  0,
@@ -40,7 +40,7 @@ func TestDeserializeHeader(t *testing.T) {
 				0x00, 0x00, 0x00, 0x00,
 			},
 			want: &Header{
-				Signature: fzSignature,
+				Signature: fzHeaderSignature,
 				Version:   1,
 				Flags:     0,
 				Reserved:  0,
@@ -112,7 +112,7 @@ func TestDeserializeHeader(t *testing.T) {
 
 func TestRoundTrip(t *testing.T) {
 	original := &Header{
-		Signature: fzSignature,
+		Signature: fzHeaderSignature,
 		Version:   1,
 		Flags:     0,
 		Reserved:  0,

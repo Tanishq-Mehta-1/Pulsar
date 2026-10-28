@@ -6,6 +6,7 @@ import (
 )
 
 const fzHeaderSignature = 0x11213141
+const HeaderSize int = 12
 
 // 12-byte archive header
 type Header struct {
@@ -16,9 +17,9 @@ type Header struct {
 }
 
 // big Endian Representation
-func SerializeHeader(header *Header) [12]byte {
+func SerializeHeader(header *Header) [HeaderSize]byte {
 
-	var byte_header [12]byte
+	var byte_header [HeaderSize]byte
 
 	binary.BigEndian.PutUint32(byte_header[:4], header.Signature)
 	binary.BigEndian.PutUint16(byte_header[4:6], header.Version)
@@ -28,7 +29,7 @@ func SerializeHeader(header *Header) [12]byte {
 	return byte_header
 }
 
-func DeserializeHeader(header_buffer [12]byte) (*Header, error) {
+func DeserializeHeader(header_buffer [HeaderSize]byte) (*Header, error) {
 
 	signature := binary.BigEndian.Uint32(header_buffer[:4])
 	version := binary.BigEndian.Uint16(header_buffer[4:6])
@@ -37,7 +38,7 @@ func DeserializeHeader(header_buffer [12]byte) (*Header, error) {
 
 	//signature check
 	if signature != fzHeaderSignature {
-		return nil, errors.New("invalid file signature")
+		return nil, errors.New("invalid file header signature")
 	}
 
 	//version check

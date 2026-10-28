@@ -17,7 +17,7 @@ type WriterStatus uint8
 const (
 	Created WriterStatus = 0
 	Active  WriterStatus = 2
-	Deleted WriterStatus = 3
+	Closed  WriterStatus = 3
 )
 
 type ArchiveWriter struct {
@@ -37,7 +37,7 @@ func checkFilename(fileName string) bool {
 func (writer *ArchiveWriter) CreateArchive(fileName string) error {
 
 	if writer.Status != Created {
-		return fmt.Errorf("invalid ArchiveWriter status ", writer.Status)
+		return fmt.Errorf("invalid ArchiveWriter status %d", writer.Status)
 	}
 
 	if !checkFilename(fileName) {
@@ -67,7 +67,15 @@ func (writer *ArchiveWriter) CreateArchive(fileName string) error {
 
 	// write header to file
 	byte_stream := SerializeHeader(&archiveHeader)
-	file.Write(byte_stream[:])
+
+	n, err := file.Write(byte_stream[:])
+	if err != nil || n != len(byte_stream) {
+		if err2 := writer.OutputFile.Close(); err2 != nil {
+			return errors.Join(err2, fmt.Errorf("wrote %d bytes instead of %d. Error: %s", n, len(byte_stream), err))
+		}
+		writer.OutputFile = nil
+		return fmt.Errorf("wrote %d bytes instead of %d. Error: %s", n, len(byte_stream), err)
+	}
 
 	writer.Status = Active
 
@@ -77,12 +85,12 @@ func (writer *ArchiveWriter) CreateArchive(fileName string) error {
 func (writer *ArchiveWriter) AddFile(path string) error {
 
 	if writer.Status != Active {
-		return fmt.Errorf("invalid ArchiveWriter status ", writer.Status)
+		return fmt.Errorf("invalid ArchiveWriter status %d", writer.Status)
 	}
 
 	fileName := filepath.Base(path)
 
-	if len(fileName) > 65535 {
+	if len(fileName) > 255 {
 		return errors.New("filename too long")
 	}
 
@@ -107,10 +115,26 @@ func (writer *ArchiveWriter) AddFile(path string) error {
 	originalSize := uint64(fileInfo.Size())
 	compressionMethod := None
 
-	//calculate checksum of original file
+	//calculate checksum of original file & write to file
 	hasher := crc32.NewIEEE()
 
-	if _, err = io.Copy(hasher, file); err != nil {
+	multiWriter := io.MultiWriter(hasher, writer.OutputFile)
+
+	if n, err := io.Copy(multiWriter, file); err != nil || n != int64(originalSize) {
+
+		//redo changes
+		if err2 := writer.OutputFile.Truncate(int64(dataOffset)); err != nil {
+			return errors.Join(err2, err)
+		}
+
+		if _, err2 := writer.OutputFile.Seek(int64(dataOffset), 0); err != nil {
+			return errors.Join(err2, err)
+		}
+
+		if n != int64(originalSize) {
+			return errors.Join(fmt.Errorf("%d bytes written instead of %d", n, originalSize), err)
+		}
+
 		return err
 	}
 
@@ -118,7 +142,7 @@ func (writer *ArchiveWriter) AddFile(path string) error {
 
 	//make the fileEntry
 	fileEntry := FileEntry{
-		FilenameLength:    uint16(len(fileName)),
+		FilenameLength:    uint8(len(fileName)),
 		Filename:          fileName,
 		DataOffset:        dataOffset,
 		OriginalSize:      originalSize,
@@ -130,14 +154,24 @@ func (writer *ArchiveWriter) AddFile(path string) error {
 	//append to pre-existing files
 	writer.Files = append(writer.Files, fileEntry)
 
-	//then we compress the file and write to the file
-
 	return nil
-
 }
 
 func (writer *ArchiveWriter) Close() error {
 
+	if writer.Status != Active {
+		return fmt.Errorf("invalid ArchiveWriter status %d", writer.Status)
+	}
+
+	outputInfo, err := writer.OutputFile.Stat()
+	if err != nil {
+		return fmt.Errorf("error reading output file stats: %v", err)
+	}
+
+	directoryOffset := uint64(outputInfo.Size())
+	entryCount := uint32(len(writer.Files))
+
+	//write the FileEntries to file
 	for _, fileEntry := range writer.Files {
 
 		buffer, err := SerializeFileEntry(&fileEntry)
@@ -145,11 +179,53 @@ func (writer *ArchiveWriter) Close() error {
 			return err
 		}
 
-		writer.OutputFile.Write(buffer)
+		n, err := writer.OutputFile.Write(buffer)
+		if err != nil || n != len(buffer) {
+			return fmt.Errorf("wrote %d bytes instead of %d bytes. Error: %s", n, len(buffer), err)
+		}
 	}
 
-	writer.OutputFile.Close()
-	writer.Status = Deleted
+	outputInfo, err = writer.OutputFile.Stat()
+	if err != nil {
+		return fmt.Errorf("error reading output file stats: %v", err)
+	}
+
+	directorySize := uint64(outputInfo.Size()) - directoryOffset
+
+	//write the Footer to file
+	archiveFooter := Footer{
+		Signature:       fzFooterSignature,
+		DirectoryOffset: directoryOffset,
+		DirectorySize:   directorySize,
+		EntryCount:      entryCount,
+	}
+
+	buffer := SerializeFooter(&archiveFooter)
+
+	outputInfo, err = writer.OutputFile.Stat()
+	if err != nil {
+		return fmt.Errorf("error reading output file stats: %v", err)
+	}
+
+	//validate footer
+	if directoryOffset != uint64(outputInfo.Size())-uint64(FooterSize) {
+		return errors.New("invalide directory offset in the footer")
+	}
+
+	if directorySize != uint64(outputInfo.Size())-uint64(FooterSize)-directoryOffset {
+		return errors.New("invalid directory size in the footer")
+	}
+
+	n, err := writer.OutputFile.Write(buffer[:])
+	if err != nil || n != len(buffer) {
+		return fmt.Errorf("wrote %d bytes instead of %d. Error: %s", n, len(buffer), err)
+	}
+
+	if err := writer.OutputFile.Close(); err != nil {
+		return err
+	}
+
+	writer.Status = Closed
 
 	return nil
 }
