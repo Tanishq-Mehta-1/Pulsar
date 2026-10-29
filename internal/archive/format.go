@@ -60,7 +60,11 @@ func DeserializeFileEntry(data []byte) (*FileEntry, int, error) {
 		return nil, 0, errors.New("FILE_ENTRY::invalid size: file entry too small")
 	}
 
-	filenameLen := data[:1][0]
+	filenameLen := int(data[0])
+
+	if len(data) < FileEntryLength+filenameLen {
+		return nil, 0, errors.New("FILE_ENTRY::invalid size: file entry too small")
+	}
 
 	//validate size
 	if len(data) < int(filenameLen)+FileEntryLength {
@@ -82,7 +86,7 @@ func DeserializeFileEntry(data []byte) (*FileEntry, int, error) {
 	}
 
 	return &FileEntry{
-		FilenameLength:    filenameLen,
+		FilenameLength:    byte(filenameLen),
 		Filename:          filename,
 		DataOffset:        dataOffset,
 		OriginalSize:      originalSize,

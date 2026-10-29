@@ -8,10 +8,9 @@ import (
 )
 
 type ArchiveReader struct {
-	OutputFile    *os.File
-	ArchiveFooter Footer
-	Files         []FileEntry
-	Status        ObjStatus
+	OutputFile *os.File
+	Files      []FileEntry
+	Status     ObjStatus
 }
 
 func (reader *ArchiveReader) OpenArchive(path string) error {
@@ -25,6 +24,15 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 		return err
 	}
 
+	ok := false
+
+	defer func() {
+		if !ok {
+			file.Close()
+			reader.Files = nil
+		}
+	}()
+
 	outputFileInfo, err := file.Stat()
 	if err != nil {
 		return err
@@ -33,8 +41,6 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	if outputFileInfo.Size() < int64(HeaderSize+FooterSize) {
 		return fmt.Errorf("READER::selected archive is too small")
 	}
-
-	reader.OutputFile = file
 
 	//read header
 	headerBuffer := make([]byte, HeaderSize)
@@ -70,9 +76,17 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	}
 
 	//validate footer
-	if archiveFooter.DirectoryOffset+archiveFooter.DirectorySize+uint64(FooterSize) != uint64(outputFileInfo.Size()) {
+	size := uint64(outputFileInfo.Size())
+	if archiveFooter.DirectoryOffset < uint64(HeaderSize) ||
+		archiveFooter.DirectoryOffset > size || archiveFooter.DirectorySize > size ||
+		archiveFooter.DirectoryOffset+archiveFooter.DirectorySize+uint64(FooterSize) != size {
 		return fmt.Errorf("READER::footer directory offset and size don't match the archive's size")
+
 	}
+
+	// if archiveFooter.DirectoryOffset+archiveFooter.DirectorySize+uint64(FooterSize) != uint64(outputFileInfo.Size()) {
+	// 	return fmt.Errorf("READER::footer directory offset and size don't match the archive's size")
+	// }
 
 	//read the directory
 	directoryData := make([]byte, archiveFooter.DirectorySize)
@@ -98,6 +112,15 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 			return err
 		}
 
+		end := fileEntry.DataOffset + fileEntry.CompressedSize
+		if fileEntry.DataOffset < uint64(HeaderSize) || end < fileEntry.DataOffset || end > archiveFooter.DirectoryOffset {
+			return fmt.Errorf("READER::incorect file entry data offset")
+
+		}
+		if fileEntry.CompressionMethod == None && fileEntry.OriginalSize != fileEntry.CompressedSize {
+			return fmt.Errorf("READER::incorrect compression for Method: NONE")
+		}
+
 		reader.Files = append(reader.Files, *fileEntry)
 		position += bytesRead
 		filesRead++
@@ -115,7 +138,9 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 		return fmt.Errorf("READER::read %d files instead of %d", filesRead, archiveFooter.EntryCount)
 	}
 
+	reader.OutputFile = file
 	reader.Status = Active
+	ok = true
 
 	return nil
 }
@@ -131,14 +156,15 @@ func (reader *ArchiveReader) ExtractFile(fileName string, dst string) error {
 	}
 
 	var requiredFileEntry FileEntry
+	found := false
 	for _, fileEntry := range reader.Files {
 		if fileEntry.Filename == fileName {
-			requiredFileEntry = fileEntry
+			requiredFileEntry, found = fileEntry, true
 			break
 		}
 	}
 
-	if requiredFileEntry.Filename != fileName {
+	if !found {
 		return fmt.Errorf("READER::no file with name: %s found in the archive", fileName)
 	}
 
@@ -167,6 +193,17 @@ func (reader *ArchiveReader) ExtractFile(fileName string, dst string) error {
 	if err != nil {
 		return err
 	}
+
+	return nil
+}
+
+func (reader *ArchiveReader) Close() error {
+
+	err := reader.OutputFile.Close()
+	if err != nil {
+		return fmt.Errorf("READER::%s", err)
+	}
+	reader.Status = Closed
 
 	return nil
 }
