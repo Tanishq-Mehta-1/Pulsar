@@ -3,6 +3,7 @@ package archive
 import (
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"os"
 )
 
@@ -35,26 +36,26 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 
 	reader.OutputFile = file
 
-	// //read header
-	// headerBuffer := make([]byte, HeaderSize)
+	//read header
+	headerBuffer := make([]byte, HeaderSize)
 
-	// n, err := file.ReadAt(headerBuffer, 0)
-	// if err != nil || n != HeaderSize {
-	// 	if err != nil {
-	// 		return err
-	// 	}
+	n, err := file.ReadAt(headerBuffer, 0)
+	if err != nil || n != HeaderSize {
+		if err != nil {
+			return err
+		}
 
-	// 	return fmt.Errorf("read %d bytes instead of %d", n, HeaderSize)
-	// }
+		return fmt.Errorf("read %d bytes instead of %d", n, HeaderSize)
+	}
 
-	// archiveHeader, err := DeserializeHeader([12]byte(headerBuffer))
-	// if err != nil {
-	// 	return err
-	// }
+	_, err = DeserializeHeader([12]byte(headerBuffer))
+	if err != nil {
+		return err
+	}
 
 	//read footer
 	footerBuffer := make([]byte, FooterSize)
-	n, err := file.ReadAt(footerBuffer, outputFileInfo.Size()-int64(FooterSize))
+	n, err = file.ReadAt(footerBuffer, outputFileInfo.Size()-int64(FooterSize))
 	if err != nil || n != FooterSize {
 		if err != nil {
 			return err
@@ -115,6 +116,57 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	}
 
 	reader.Status = Active
+
+	return nil
+}
+
+func (reader *ArchiveReader) extractFile(fileName string, dst string) error {
+
+	if reader.Status != Active {
+		return fmt.Errorf("invalid ArchiveWriter status %d", reader.Status)
+	}
+
+	if len(fileName) > 255 {
+		return errors.New("filename is too long")
+	}
+
+	var requiredFileEntry FileEntry
+	for _, fileEntry := range reader.Files {
+		if fileEntry.Filename == fileName {
+			requiredFileEntry = fileEntry
+			break
+		}
+	}
+
+	if requiredFileEntry.Filename != fileName {
+		return fmt.Errorf("no file with name: %s found in the archive", fileName)
+	}
+
+	fileBuffer := make([]byte, requiredFileEntry.CompressedSize)
+	n, err := reader.OutputFile.ReadAt(fileBuffer, int64(requiredFileEntry.DataOffset))
+	if err != nil || n != int(requiredFileEntry.CompressedSize) {
+
+		if err != nil {
+			return err
+		}
+
+		return fmt.Errorf("read %d bytes instead of %d", n, requiredFileEntry.CompressedSize)
+	}
+
+	//decompress later, for now nothing
+
+	//check checksum and write to the destination
+	table := crc32.MakeTable(crc32.IEEE)
+	checksum := crc32.Checksum(fileBuffer, table)
+
+	if checksum != requiredFileEntry.Checksum {
+		return errors.New("checksum failed!")
+	}
+
+	err = os.WriteFile(dst, fileBuffer, 0644)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
