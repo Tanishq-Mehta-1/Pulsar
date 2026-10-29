@@ -12,18 +12,18 @@ import (
 
 var extension string = ".fz"
 
-type WriterStatus uint8
+type ObjStatus uint8
 
 const (
-	Created WriterStatus = 0
-	Active  WriterStatus = 2
-	Closed  WriterStatus = 3
+	Created ObjStatus = 0
+	Active  ObjStatus = 2
+	Closed  ObjStatus = 3
 )
 
 type ArchiveWriter struct {
 	OutputFile *os.File
 	Files      []FileEntry
-	Status     WriterStatus
+	Status     ObjStatus
 }
 
 func checkFilename(fileName string) bool {
@@ -120,22 +120,25 @@ func (writer *ArchiveWriter) AddFile(path string) error {
 
 	multiWriter := io.MultiWriter(hasher, writer.OutputFile)
 
-	if n, err := io.Copy(multiWriter, file); err != nil || n != int64(originalSize) {
+	n, err := io.Copy(multiWriter, file)
+	if err != nil || n != int64(originalSize) {
 
 		//redo changes
-		if err2 := writer.OutputFile.Truncate(int64(dataOffset)); err != nil {
-			return errors.Join(err2, err)
+		rollbackErr := writer.OutputFile.Truncate(int64(dataOffset))
+		if rollbackErr != nil {
+			return errors.Join(err, rollbackErr)
 		}
 
-		if _, err2 := writer.OutputFile.Seek(int64(dataOffset), 0); err != nil {
-			return errors.Join(err2, err)
+		_, seekErr := writer.OutputFile.Seek(int64(dataOffset), io.SeekStart)
+		if seekErr != nil {
+			return errors.Join(err, seekErr)
 		}
 
-		if n != int64(originalSize) {
-			return errors.Join(fmt.Errorf("%d bytes written instead of %d", n, originalSize), err)
+		if err != nil {
+			return err
 		}
 
-		return err
+		return fmt.Errorf("copied %d bytes, expected %d", n, originalSize)
 	}
 
 	checksum := hasher.Sum32()
