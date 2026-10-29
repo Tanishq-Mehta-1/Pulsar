@@ -2,13 +2,13 @@ package archive
 
 import (
 	"encoding/binary"
-	"errors"
+	"fmt"
 )
 
 const fzFooterSignature = 0x51617181
 const FooterSize int = 24
 
-// 24-byte archive footer
+// 24-byte archive
 type Footer struct {
 	Signature       uint32
 	DirectoryOffset uint64
@@ -38,7 +38,7 @@ func DeserializeFooter(footer_buffer [FooterSize]byte) (*Footer, error) {
 
 	//signature check
 	if signature != fzFooterSignature {
-		return nil, errors.New("invalid file footer signature")
+		return nil, fmt.Errorf("FOOTER::invalid file footer signature, read %x instead of %x", signature, fzFooterSignature)
 	}
 
 	return &Footer{

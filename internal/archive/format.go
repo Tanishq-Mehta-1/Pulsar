@@ -28,17 +28,17 @@ type FileEntry struct {
 func SerializeFileEntry(entry *FileEntry) ([]byte, error) {
 
 	if entry == nil {
-		return nil, errors.New("empty FileEntry")
+		return nil, errors.New("FILE_ENTRY::empty FileEntry")
 	}
 
 	filenameLen := len(entry.Filename)
 	if filenameLen > 255 {
-		return nil, errors.New("filename too long")
+		return nil, errors.New("FILE_ENTRY::filename too long")
 	}
 
 	//prechecks
 	if len(entry.Filename) != int(entry.FilenameLength) {
-		return nil, errors.New("filename length does not match")
+		return nil, errors.New("FILE_ENTRY::filename length does not match")
 	}
 
 	buffer := make([]byte, FileEntryLength+filenameLen)
@@ -57,14 +57,14 @@ func SerializeFileEntry(entry *FileEntry) ([]byte, error) {
 func DeserializeFileEntry(data []byte) (*FileEntry, int, error) {
 
 	if len(data) < FileEntryLength {
-		return nil, 0, errors.New("invalid size: file entry too small")
+		return nil, 0, errors.New("FILE_ENTRY::invalid size: file entry too small")
 	}
 
 	filenameLen := data[:1][0]
 
 	//validate size
 	if len(data) < int(filenameLen)+FileEntryLength {
-		return nil, 0, errors.New("invalid size: file entry doesn't match size")
+		return nil, 0, errors.New("FILE_ENTRY::invalid size: file entry doesn't match size")
 	}
 
 	filename := string(data[1 : 1+filenameLen])
@@ -78,7 +78,7 @@ func DeserializeFileEntry(data []byte) (*FileEntry, int, error) {
 	switch compressionMethod {
 	case None, Basic:
 	default:
-		return nil, 0, errors.New("invalid compression method")
+		return nil, 0, errors.New("FILE_ENTRY::invalid compression method")
 	}
 
 	return &FileEntry{

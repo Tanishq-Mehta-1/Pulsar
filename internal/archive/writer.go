@@ -18,6 +18,7 @@ const (
 	Created ObjStatus = 0
 	Active  ObjStatus = 2
 	Closed  ObjStatus = 3
+	Failed  ObjStatus = 4
 )
 
 type ArchiveWriter struct {
@@ -37,11 +38,11 @@ func checkFilename(fileName string) bool {
 func (writer *ArchiveWriter) CreateArchive(fileName string) error {
 
 	if writer.Status != Created {
-		return fmt.Errorf("invalid ArchiveWriter status %d", writer.Status)
+		return fmt.Errorf("WRITER::invalid ArchiveWriter status %d", writer.Status)
 	}
 
 	if !checkFilename(fileName) {
-		return errors.New("invalid filename")
+		return errors.New("WRITER::invalid filename")
 	}
 
 	if fileName == "" {
@@ -71,10 +72,10 @@ func (writer *ArchiveWriter) CreateArchive(fileName string) error {
 	n, err := file.Write(byte_stream[:])
 	if err != nil || n != len(byte_stream) {
 		if err2 := writer.OutputFile.Close(); err2 != nil {
-			return errors.Join(err2, fmt.Errorf("wrote %d bytes instead of %d. Error: %s", n, len(byte_stream), err))
+			return errors.Join(err2, fmt.Errorf("WRITER::wrote %d bytes instead of %d. Error: %s", n, len(byte_stream), err))
 		}
 		writer.OutputFile = nil
-		return fmt.Errorf("wrote %d bytes instead of %d. Error: %s", n, len(byte_stream), err)
+		return fmt.Errorf("WRITER::wrote %d bytes instead of %d. Error: %s", n, len(byte_stream), err)
 	}
 
 	writer.Status = Active
@@ -85,13 +86,13 @@ func (writer *ArchiveWriter) CreateArchive(fileName string) error {
 func (writer *ArchiveWriter) AddFile(path string) error {
 
 	if writer.Status != Active {
-		return fmt.Errorf("invalid ArchiveWriter status %d", writer.Status)
+		return fmt.Errorf("WRITER::invalid ArchiveWriter status %d", writer.Status)
 	}
 
 	fileName := filepath.Base(path)
 
 	if len(fileName) > 255 {
-		return errors.New("filename too long")
+		return errors.New("WRITER::filename too long")
 	}
 
 	file, err := os.Open(path)
@@ -103,12 +104,12 @@ func (writer *ArchiveWriter) AddFile(path string) error {
 
 	outputInfo, err := writer.OutputFile.Stat()
 	if err != nil {
-		return fmt.Errorf("error reading output file stats: %v", err)
+		return fmt.Errorf("WRITER::error reading output file stats: %v", err)
 	}
 
 	fileInfo, err := file.Stat()
 	if err != nil {
-		return fmt.Errorf("error reading file stats: %v", err)
+		return fmt.Errorf("WRITER::error reading file stats: %v", err)
 	}
 
 	dataOffset := uint64(outputInfo.Size())
@@ -131,6 +132,9 @@ func (writer *ArchiveWriter) AddFile(path string) error {
 
 		_, seekErr := writer.OutputFile.Seek(int64(dataOffset), io.SeekStart)
 		if seekErr != nil {
+
+			//memory truncated but file pointer not moved
+			writer.Status = Failed
 			return errors.Join(err, seekErr)
 		}
 
@@ -138,7 +142,7 @@ func (writer *ArchiveWriter) AddFile(path string) error {
 			return err
 		}
 
-		return fmt.Errorf("copied %d bytes, expected %d", n, originalSize)
+		return fmt.Errorf("WRITER::copied %d bytes, expected %d", n, originalSize)
 	}
 
 	checksum := hasher.Sum32()
@@ -163,12 +167,12 @@ func (writer *ArchiveWriter) AddFile(path string) error {
 func (writer *ArchiveWriter) Close() error {
 
 	if writer.Status != Active {
-		return fmt.Errorf("invalid ArchiveWriter status %d", writer.Status)
+		return fmt.Errorf("WRITER::invalid ArchiveWriter status %d", writer.Status)
 	}
 
 	outputInfo, err := writer.OutputFile.Stat()
 	if err != nil {
-		return fmt.Errorf("error reading output file stats: %v", err)
+		return fmt.Errorf("WRITER::error reading output file stats: %v", err)
 	}
 
 	directoryOffset := uint64(outputInfo.Size())
@@ -184,13 +188,13 @@ func (writer *ArchiveWriter) Close() error {
 
 		n, err := writer.OutputFile.Write(buffer)
 		if err != nil || n != len(buffer) {
-			return fmt.Errorf("wrote %d bytes instead of %d bytes. Error: %s", n, len(buffer), err)
+			return fmt.Errorf("WRITER::wrote %d bytes instead of %d bytes. Error: %s", n, len(buffer), err)
 		}
 	}
 
 	outputInfo, err = writer.OutputFile.Stat()
 	if err != nil {
-		return fmt.Errorf("error reading output file stats: %v", err)
+		return fmt.Errorf("WRITER::error reading output file stats: %v", err)
 	}
 
 	directorySize := uint64(outputInfo.Size()) - directoryOffset
@@ -207,21 +211,17 @@ func (writer *ArchiveWriter) Close() error {
 
 	outputInfo, err = writer.OutputFile.Stat()
 	if err != nil {
-		return fmt.Errorf("error reading output file stats: %v", err)
+		return fmt.Errorf("WRITER::error reading output file stats: %v", err)
 	}
 
 	//validate footer
-	if directoryOffset != uint64(outputInfo.Size())-uint64(FooterSize) {
-		return errors.New("invalide directory offset in the footer")
-	}
-
-	if directorySize != uint64(outputInfo.Size())-uint64(FooterSize)-directoryOffset {
-		return errors.New("invalid directory size in the footer")
+	if directoryOffset+directorySize != uint64(outputInfo.Size()) {
+		return errors.New("WRITER::invalid directory offset or size")
 	}
 
 	n, err := writer.OutputFile.Write(buffer[:])
 	if err != nil || n != len(buffer) {
-		return fmt.Errorf("wrote %d bytes instead of %d. Error: %s", n, len(buffer), err)
+		return fmt.Errorf("WRITER::wrote %d bytes instead of %d. Error: %s", n, len(buffer), err)
 	}
 
 	if err := writer.OutputFile.Close(); err != nil {

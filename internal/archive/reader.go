@@ -17,7 +17,7 @@ type ArchiveReader struct {
 func (reader *ArchiveReader) OpenArchive(path string) error {
 
 	if reader.Status != Created {
-		return fmt.Errorf("invalid ArchiveWriter status %d", reader.Status)
+		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
 	}
 
 	file, err := os.Open(path)
@@ -31,7 +31,7 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	}
 
 	if outputFileInfo.Size() < int64(HeaderSize+FooterSize) {
-		return fmt.Errorf("selected archive is too small")
+		return fmt.Errorf("READER::selected archive is too small")
 	}
 
 	reader.OutputFile = file
@@ -45,7 +45,7 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 			return err
 		}
 
-		return fmt.Errorf("read %d bytes instead of %d", n, HeaderSize)
+		return fmt.Errorf("READER::read %d bytes instead of %d", n, HeaderSize)
 	}
 
 	_, err = DeserializeHeader([12]byte(headerBuffer))
@@ -61,7 +61,7 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 			return err
 		}
 
-		return fmt.Errorf("read %d bytes instead of %d", n, FooterSize)
+		return fmt.Errorf("READER::read %d bytes instead of %d", n, FooterSize)
 	}
 
 	archiveFooter, err := DeserializeFooter([24]byte(footerBuffer))
@@ -71,7 +71,7 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 
 	//validate footer
 	if archiveFooter.DirectoryOffset+archiveFooter.DirectorySize+uint64(FooterSize) != uint64(outputFileInfo.Size()) {
-		return fmt.Errorf("footer directory offset and size don't match the archive's size")
+		return fmt.Errorf("READER::footer directory offset and size don't match the archive's size")
 	}
 
 	//read the directory
@@ -82,7 +82,7 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 			return err
 		}
 
-		return fmt.Errorf("read %d bytes instead of %d", n, archiveFooter.DirectorySize)
+		return fmt.Errorf("READER::read %d bytes instead of %d", n, archiveFooter.DirectorySize)
 	}
 
 	//extract file entries
@@ -106,13 +106,13 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	if position != len(directoryData) {
 		//undo changes
 		reader.Files = nil
-		return errors.New("error reading central directory")
+		return errors.New("READER::error reading central directory")
 	}
 
 	if filesRead != int(archiveFooter.EntryCount) {
 		//undo changes
 		reader.Files = nil
-		return fmt.Errorf("read %d files instead of %d", filesRead, archiveFooter.EntryCount)
+		return fmt.Errorf("READER::read %d files instead of %d", filesRead, archiveFooter.EntryCount)
 	}
 
 	reader.Status = Active
@@ -120,14 +120,14 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	return nil
 }
 
-func (reader *ArchiveReader) extractFile(fileName string, dst string) error {
+func (reader *ArchiveReader) ExtractFile(fileName string, dst string) error {
 
 	if reader.Status != Active {
-		return fmt.Errorf("invalid ArchiveWriter status %d", reader.Status)
+		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
 	}
 
 	if len(fileName) > 255 {
-		return errors.New("filename is too long")
+		return errors.New("READER::filename is too long")
 	}
 
 	var requiredFileEntry FileEntry
@@ -139,7 +139,7 @@ func (reader *ArchiveReader) extractFile(fileName string, dst string) error {
 	}
 
 	if requiredFileEntry.Filename != fileName {
-		return fmt.Errorf("no file with name: %s found in the archive", fileName)
+		return fmt.Errorf("READER::no file with name: %s found in the archive", fileName)
 	}
 
 	fileBuffer := make([]byte, requiredFileEntry.CompressedSize)
@@ -150,7 +150,7 @@ func (reader *ArchiveReader) extractFile(fileName string, dst string) error {
 			return err
 		}
 
-		return fmt.Errorf("read %d bytes instead of %d", n, requiredFileEntry.CompressedSize)
+		return fmt.Errorf("READER::read %d bytes instead of %d", n, requiredFileEntry.CompressedSize)
 	}
 
 	//decompress later, for now nothing
@@ -160,7 +160,7 @@ func (reader *ArchiveReader) extractFile(fileName string, dst string) error {
 	checksum := crc32.Checksum(fileBuffer, table)
 
 	if checksum != requiredFileEntry.Checksum {
-		return errors.New("checksum failed!")
+		return errors.New("READER::checksum failed!")
 	}
 
 	err = os.WriteFile(dst, fileBuffer, 0644)

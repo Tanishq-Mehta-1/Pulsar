@@ -3,6 +3,7 @@ package archive
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 )
 
 const fzHeaderSignature = 0x11213141
@@ -38,7 +39,7 @@ func DeserializeHeader(header_buffer [HeaderSize]byte) (*Header, error) {
 
 	//signature check
 	if signature != fzHeaderSignature {
-		return nil, errors.New("invalid file header signature")
+		return nil, fmt.Errorf("HEADER::invalid file header signature, read %x instead of %x", signature, fzHeaderSignature)
 	}
 
 	//version check
@@ -46,17 +47,17 @@ func DeserializeHeader(header_buffer [HeaderSize]byte) (*Header, error) {
 	case 1:
 		break
 	default:
-		return nil, errors.New("invalid archive version")
+		return nil, errors.New("HEADER::invalid archive version")
 	}
 
 	//flag check
 	if flags != 0 {
-		return nil, errors.New("invalid flags")
+		return nil, errors.New("HEADER::invalid flags")
 	}
 
 	//reserved check
 	if reserved != 0 {
-		return nil, errors.New("invalid reserved bytes")
+		return nil, errors.New("HEADER::invalid reserved bytes")
 	}
 
 	return &Header{
