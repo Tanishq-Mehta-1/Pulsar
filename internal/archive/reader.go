@@ -1,9 +1,11 @@
 package archive
 
 import (
+	"compress/flate"
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"os"
 )
 
@@ -121,6 +123,13 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 			return fmt.Errorf("READER::incorrect compression for Method: NONE")
 		}
 
+		switch fileEntry.CompressionMethod {
+		case None, BestCompression, BestSpeed, HuffmanOnly, Default:
+			break
+		default:
+			return fmt.Errorf("READER::incorrect compression method")
+		}
+
 		reader.Files = append(reader.Files, *fileEntry)
 		position += bytesRead
 		filesRead++
@@ -145,7 +154,7 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	return nil
 }
 
-func (reader *ArchiveReader) ExtractFile(fileName string, dst string) error {
+func (reader *ArchiveReader) ExtractFile(fileName string, dst string) (err error) {
 
 	if reader.Status != Active {
 		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
@@ -168,30 +177,95 @@ func (reader *ArchiveReader) ExtractFile(fileName string, dst string) error {
 		return fmt.Errorf("READER::no file with name: %s found in the archive", fileName)
 	}
 
-	fileBuffer := make([]byte, requiredFileEntry.CompressedSize)
-	n, err := reader.OutputFile.ReadAt(fileBuffer, int64(requiredFileEntry.DataOffset))
-	if err != nil || n != int(requiredFileEntry.CompressedSize) {
+	dist, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
 
-		if err != nil {
+	defer dist.Close()
+
+	//extract file and put into dist
+	success := false
+
+	defer func() {
+		if !success {
+			if err = os.Remove(dist.Name()); err != nil {
+				err = errors.Join(err, fmt.Errorf("READER::error deleting file: %s after failed extraction", dist.Name()))
+				return
+			}
+
+			return
+		}
+	}()
+
+	switch requiredFileEntry.CompressionMethod {
+	case None:
+
+		hasher := crc32.NewIEEE()
+		multiWriter := io.MultiWriter(hasher, dist)
+
+		sectionReader := io.NewSectionReader(
+			reader.OutputFile,
+			int64(requiredFileEntry.DataOffset),
+			int64(requiredFileEntry.OriginalSize))
+
+		n, err := io.Copy(multiWriter, sectionReader)
+		if n != int64(requiredFileEntry.OriginalSize) || err != nil {
+			if err != nil {
+				return err
+			}
+
+			err = fmt.Errorf("READER::wrote %d bytes instead of %d", n, requiredFileEntry.OriginalSize)
 			return err
 		}
 
-		return fmt.Errorf("READER::read %d bytes instead of %d", n, requiredFileEntry.CompressedSize)
+		checksum := hasher.Sum32()
+		if checksum != requiredFileEntry.Checksum {
+			err = fmt.Errorf("READER::checksum invalid. Calculated: %d, Actual: %d", checksum, requiredFileEntry.Checksum)
+			return err
+		}
+
+		break
+
+	case Default, BestSpeed, BestCompression, HuffmanOnly:
+
+		if err = reader.extractCompressed(requiredFileEntry, dist); err != nil {
+			return err
+		}
+
+		break
+	default:
+		return errors.New("READER::unsupported compression method")
 	}
 
-	//decompress later, for now nothing
+	success = true
+	return nil
+}
 
-	//check checksum and write to the destination
-	table := crc32.MakeTable(crc32.IEEE)
-	checksum := crc32.Checksum(fileBuffer, table)
+func (reader *ArchiveReader) extractCompressed(entry FileEntry, dst *os.File) (err error) {
 
-	if checksum != requiredFileEntry.Checksum {
-		return errors.New("READER::checksum failed!")
+	sectionReader := io.NewSectionReader(reader.OutputFile, int64(entry.DataOffset), int64(entry.CompressedSize))
+	flateReader := flate.NewReader(sectionReader)
+
+	defer flateReader.Close()
+
+	hasher := crc32.NewIEEE()
+
+	multiWriter := io.MultiWriter(hasher, dst)
+	n, err := io.Copy(multiWriter, flateReader)
+	if err != nil || n != int64(entry.OriginalSize) {
+		if err != nil {
+			return
+		}
+
+		err = fmt.Errorf("READER::wrote %d bytes instead of %d", n, entry.OriginalSize)
+		return
 	}
 
-	err = os.WriteFile(dst, fileBuffer, 0644)
-	if err != nil {
-		return err
+	checksum := hasher.Sum32()
+	if checksum != entry.Checksum {
+		err = fmt.Errorf("READER::checksum invalid. Calculated: %d, Actual: %d", checksum, entry.Checksum)
+		return
 	}
 
 	return nil

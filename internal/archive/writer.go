@@ -110,10 +110,10 @@ func (writer *ArchiveWriter) writeCompressed(file *os.File, method CompressionMe
 
 	multiWriter := io.MultiWriter(crc, flateWriter)
 
-	written := false
+	ok := false
 
 	defer func() {
-		if !written {
+		if !ok {
 			//redo changes
 			if err2 := flateWriter.Close(); err2 != nil {
 				writer.Status = Failed
@@ -156,7 +156,7 @@ func (writer *ArchiveWriter) writeCompressed(file *os.File, method CompressionMe
 
 	compressedSize = uint64(outputInfo.Size()) - dataOffset
 	checksum = crc.Sum32()
-	written = true
+	ok = true
 
 	return compressedSize, checksum, nil
 }
