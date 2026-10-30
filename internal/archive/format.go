@@ -5,11 +5,14 @@ import (
 	"errors"
 )
 
-type CompressionMethod uint8
+type CompressionMethod int8
 
 const (
-	None  CompressionMethod = 0
-	Basic CompressionMethod = 1
+	Default         CompressionMethod = -1
+	None            CompressionMethod = 0
+	BestSpeed       CompressionMethod = 1
+	BestCompression CompressionMethod = 9
+	HuffmanOnly     CompressionMethod = -2
 )
 
 const FileEntryLength int = 30
@@ -80,7 +83,7 @@ func DeserializeFileEntry(data []byte) (*FileEntry, int, error) {
 
 	//validate compressionMethod
 	switch compressionMethod {
-	case None, Basic:
+	case None, Default, HuffmanOnly, BestSpeed, BestCompression:
 	default:
 		return nil, 0, errors.New("FILE_ENTRY::invalid compression method")
 	}

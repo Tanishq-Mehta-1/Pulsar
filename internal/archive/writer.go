@@ -1,6 +1,7 @@
 package archive
 
 import (
+	"compress/flate"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -51,10 +52,19 @@ func (writer *ArchiveWriter) CreateArchive(fileName string) error {
 
 	fileName += extension
 
+	ok := false
+
 	file, err := os.Create(fileName)
 	if err != nil {
 		return err
 	}
+
+	defer func() {
+		if !ok {
+			file.Close()
+			writer.OutputFile = nil
+		}
+	}()
 
 	// assign output file to ArchiveWriter
 	writer.OutputFile = file
@@ -71,19 +81,87 @@ func (writer *ArchiveWriter) CreateArchive(fileName string) error {
 
 	n, err := file.Write(byte_stream[:])
 	if err != nil || n != len(byte_stream) {
-		if err2 := writer.OutputFile.Close(); err2 != nil {
-			return errors.Join(err2, fmt.Errorf("WRITER::wrote %d bytes instead of %d. Error: %s", n, len(byte_stream), err))
+
+		writer.Status = Failed
+
+		if err != nil {
+			return err
 		}
-		writer.OutputFile = nil
 		return fmt.Errorf("WRITER::wrote %d bytes instead of %d. Error: %s", n, len(byte_stream), err)
 	}
 
 	writer.Status = Active
+	ok = true
 
 	return nil
 }
 
-func (writer *ArchiveWriter) AddFile(path string) error {
+// returns compressed_size, checksum and error
+func (writer *ArchiveWriter) writeCompressed(file *os.File, method CompressionMethod, dataOffset uint64, originalSize uint64) (compressedSize uint64, checksum uint32, err error) {
+
+	//crc hasher
+	crc := crc32.NewIEEE()
+
+	//flate writer
+	flateWriter, err := flate.NewWriter(writer.OutputFile, int(method))
+	if err != nil {
+		return 0, 0, err
+	}
+
+	multiWriter := io.MultiWriter(crc, flateWriter)
+
+	written := false
+
+	defer func() {
+		if !written {
+			//redo changes
+			if err2 := flateWriter.Close(); err2 != nil {
+				writer.Status = Failed
+				err = fmt.Errorf("WRITER::failed to close compressor: %v", errors.Join(err, err2))
+				return
+			}
+
+			rollbackErr := writer.OutputFile.Truncate(int64(dataOffset))
+			if rollbackErr != nil {
+				writer.Status = Failed
+				err = errors.Join(err, rollbackErr)
+			}
+
+			_, seekErr := writer.OutputFile.Seek(int64(dataOffset), io.SeekStart)
+			if seekErr != nil {
+				//memory truncated but file pointer not moved
+				writer.Status = Failed
+				err = errors.Join(err, rollbackErr)
+			}
+		}
+	}()
+
+	n, err := io.Copy(multiWriter, file)
+	if err != nil || n != int64(originalSize) {
+		if err != nil {
+			return 0, 0, err
+		}
+
+		return 0, 0, fmt.Errorf("WRITER::wrote %d bytes instead of %d bytes", n, originalSize)
+	}
+
+	if err := flateWriter.Close(); err != nil {
+		return 0, 0, fmt.Errorf("WRITER::failed to close compressor: %v", err)
+	}
+
+	outputInfo, err := writer.OutputFile.Stat()
+	if err != nil {
+		return 0, 0, err
+	}
+
+	compressedSize = uint64(outputInfo.Size()) - dataOffset
+	checksum = crc.Sum32()
+	written = true
+
+	return compressedSize, checksum, nil
+}
+
+func (writer *ArchiveWriter) AddFile(path string, method CompressionMethod) error {
 
 	if writer.Status != Active {
 		return fmt.Errorf("WRITER::invalid ArchiveWriter status %d", writer.Status)
@@ -114,38 +192,55 @@ func (writer *ArchiveWriter) AddFile(path string) error {
 
 	dataOffset := uint64(outputInfo.Size())
 	originalSize := uint64(fileInfo.Size())
-	compressionMethod := None
+	compressionMethod := method
+	var checksum uint32
+	var compressedSize uint64
 
-	//calculate checksum of original file & write to file
-	hasher := crc32.NewIEEE()
+	switch method {
+	case None:
+		//compress the data
+		hasher := crc32.NewIEEE()
 
-	multiWriter := io.MultiWriter(hasher, writer.OutputFile)
+		//calculate checksum of original file & write to file
+		multiWriter := io.MultiWriter(hasher, writer.OutputFile)
 
-	n, err := io.Copy(multiWriter, file)
-	if err != nil || n != int64(originalSize) {
+		n, err := io.Copy(multiWriter, file)
+		if err != nil || n != int64(originalSize) {
 
-		//redo changes
-		rollbackErr := writer.OutputFile.Truncate(int64(dataOffset))
-		if rollbackErr != nil {
-			return errors.Join(err, rollbackErr)
+			//redo changes
+			rollbackErr := writer.OutputFile.Truncate(int64(dataOffset))
+			if rollbackErr != nil {
+				writer.Status = Failed
+				return errors.Join(err, rollbackErr)
+			}
+
+			_, seekErr := writer.OutputFile.Seek(int64(dataOffset), io.SeekStart)
+			if seekErr != nil {
+
+				//memory truncated but file pointer not moved
+				writer.Status = Failed
+				return errors.Join(err, seekErr)
+			}
+
+			if err != nil {
+				return err
+			}
+
+			return fmt.Errorf("WRITER::copied %d bytes, expected %d", n, originalSize)
 		}
 
-		_, seekErr := writer.OutputFile.Seek(int64(dataOffset), io.SeekStart)
-		if seekErr != nil {
-
-			//memory truncated but file pointer not moved
-			writer.Status = Failed
-			return errors.Join(err, seekErr)
-		}
-
+		checksum = hasher.Sum32()
+		compressedSize = originalSize
+		break
+	case Default, BestCompression, BestSpeed, HuffmanOnly:
+		compressedSize, checksum, err = writer.writeCompressed(file, method, dataOffset, originalSize)
 		if err != nil {
 			return err
 		}
-
-		return fmt.Errorf("WRITER::copied %d bytes, expected %d", n, originalSize)
+		break
+	default:
+		return fmt.Errorf("invalid compression method")
 	}
-
-	checksum := hasher.Sum32()
 
 	//make the fileEntry
 	fileEntry := FileEntry{
@@ -153,7 +248,7 @@ func (writer *ArchiveWriter) AddFile(path string) error {
 		Filename:          fileName,
 		DataOffset:        dataOffset,
 		OriginalSize:      originalSize,
-		CompressedSize:    originalSize,
+		CompressedSize:    compressedSize,
 		CompressionMethod: compressionMethod,
 		Checksum:          checksum,
 	}
