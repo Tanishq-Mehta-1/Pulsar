@@ -94,7 +94,7 @@ func TestArchiveWriter_InvalidStates(t *testing.T) {
 		dir := chdirTemp(t)
 		src := writeTestFile(t, dir, "x.txt", []byte("x"))
 		w := &ArchiveWriter{}
-		if err := w.AddFile(src); err == nil {
+		if err := w.AddFile(src, None); err == nil {
 			t.Fatal("expected error")
 		}
 		if w.Status != Created || len(w.Files) != 0 {
@@ -166,7 +166,7 @@ func TestArchiveWriter_InvalidStates(t *testing.T) {
 			t.Fatal(err)
 		}
 		before := readTestFile(t, filepath.Join(dir, "c.fz"))
-		if err := w.AddFile(src); err == nil {
+		if err := w.AddFile(src, None); err == nil {
 			t.Fatal("AddFile after Close should fail")
 		}
 		if err := w.CreateArchive("again"); err == nil {
@@ -188,7 +188,7 @@ func TestAddFile_SingleFileMetadataAndData(t *testing.T) {
 	if err := w.CreateArchive("single"); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.AddFile(src); err != nil {
+	if err := w.AddFile(src, None); err != nil {
 		t.Fatalf("AddFile: %v", err)
 	}
 	if len(w.Files) != 1 {
@@ -235,7 +235,7 @@ func TestAddFile_ContentShapes(t *testing.T) {
 			if err := w.CreateArchive(name); err != nil {
 				t.Fatal(err)
 			}
-			if err := w.AddFile(src); err != nil {
+			if err := w.AddFile(src, None); err != nil {
 				t.Fatalf("AddFile: %v", err)
 			}
 			if err := w.Close(); err != nil {
@@ -333,7 +333,7 @@ func TestAddFile_UsesBaseNameOfNestedPath(t *testing.T) {
 	if err := w.CreateArchive("nested"); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.AddFile(src); err != nil {
+	if err := w.AddFile(src, None); err != nil {
 		t.Fatal(err)
 	}
 	if got := w.Files[0].Filename; got != "deep.txt" {
@@ -362,10 +362,10 @@ func TestAddFile_DuplicateBaseNames(t *testing.T) {
 	if err := w.CreateArchive("dups"); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.AddFile(p1); err != nil {
+	if err := w.AddFile(p1, None); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.AddFile(p2); err != nil {
+	if err := w.AddFile(p2, None); err != nil {
 		t.Fatalf("second file with same base name rejected: %v", err)
 	}
 	if err := w.Close(); err != nil {
@@ -394,7 +394,7 @@ func TestAddFile_MissingInput(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := w.AddFile(filepath.Join(dir, "does-not-exist.txt")); err == nil {
+	if err := w.AddFile(filepath.Join(dir, "does-not-exist.txt"), None); err == nil {
 		t.Fatal("expected error for missing input")
 	}
 	if len(w.Files) != 0 {
@@ -413,7 +413,7 @@ func TestAddFile_MissingInput(t *testing.T) {
 
 	// The writer must remain usable.
 	src := writeTestFile(t, dir, "ok.txt", []byte("ok"))
-	if err := w.AddFile(src); err != nil {
+	if err := w.AddFile(src, None); err != nil {
 		t.Fatalf("AddFile after failure: %v", err)
 	}
 	if w.Files[0].DataOffset != uint64(HeaderSize) {
@@ -428,7 +428,7 @@ func TestAddFile_FilenameTooLong(t *testing.T) {
 	if err := w.CreateArchive("long"); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.AddFile(filepath.Join(dir, strings.Repeat("n", 256))); err == nil {
+	if err := w.AddFile(filepath.Join(dir, strings.Repeat("n", 256)), None); err == nil {
 		t.Fatal("expected error for 256-byte base name")
 	}
 	if len(w.Files) != 0 || w.Status != Active {
@@ -448,7 +448,7 @@ func TestAddFile_MaxLengthFilename(t *testing.T) {
 	if err := w.CreateArchive("max"); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.AddFile(src); err != nil {
+	if err := w.AddFile(src, None); err != nil {
 		t.Fatalf("255-byte name rejected: %v", err)
 	}
 	if w.Files[0].Filename != name || w.Files[0].FilenameLength != 255 {
@@ -470,7 +470,7 @@ func TestAddFile_FailedCopyRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	good1 := writeTestFile(t, dir, "good1.txt", []byte("11111"))
-	if err := w.AddFile(good1); err != nil {
+	if err := w.AddFile(good1, None); err != nil {
 		t.Fatal(err)
 	}
 	sizeBefore := int64(HeaderSize + 5)
@@ -479,7 +479,7 @@ func TestAddFile_FailedCopyRollsBack(t *testing.T) {
 	if err := os.Mkdir(bad, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.AddFile(bad); err == nil {
+	if err := w.AddFile(bad, None); err == nil {
 		t.Fatal("expected error adding a directory")
 	}
 	if len(w.Files) != 1 {
@@ -497,7 +497,7 @@ func TestAddFile_FailedCopyRollsBack(t *testing.T) {
 	}
 
 	good2 := writeTestFile(t, dir, "good2.txt", []byte("2222222"))
-	if err := w.AddFile(good2); err != nil {
+	if err := w.AddFile(good2, None); err != nil {
 		t.Fatalf("AddFile after failed copy: %v", err)
 	}
 	if w.Files[1].DataOffset != uint64(sizeBefore) {
@@ -534,7 +534,7 @@ func TestArchiveWriter_BrokenOutputHandle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := w.AddFile(src); err == nil {
+	if err := w.AddFile(src, None); err == nil {
 		t.Fatal("AddFile succeeded with a closed output file")
 	}
 	if len(w.Files) != 0 {
@@ -627,5 +627,123 @@ func TestClose_ClosesFileHandle(t *testing.T) {
 	}
 	if _, err := w.OutputFile.Write([]byte{0}); err == nil {
 		t.Fatal("output file still writable after Close")
+	}
+}
+
+func TestAddFile_RejectsInvalidMethod(t *testing.T) {
+	dir := chdirTemp(t)
+	src := writeTestFile(t, dir, "x.txt", []byte("payload"))
+	w := &ArchiveWriter{}
+	closeWriterOnCleanup(t, w)
+	if err := w.CreateArchive("badm"); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []CompressionMethod{2, 5, 10, -3, 127, -128} {
+		if err := w.AddFile(src, m); err == nil {
+			t.Fatalf("method %d accepted", m)
+		}
+	}
+	if len(w.Files) != 0 || w.Status != Active {
+		t.Fatalf("state changed: files=%d status=%d", len(w.Files), w.Status)
+	}
+	if info, _ := w.OutputFile.Stat(); info.Size() != int64(HeaderSize) {
+		t.Fatalf("output grew to %d bytes", info.Size())
+	}
+}
+
+func TestAddFile_CompressedMetadata(t *testing.T) {
+	for _, m := range allMethods[1:] {
+		t.Run(m.name, func(t *testing.T) {
+			dir := chdirTemp(t)
+			content := bytes.Repeat([]byte("squeeze me "), 2000)
+			src := writeTestFile(t, dir, "c.txt", content)
+			w := &ArchiveWriter{}
+			closeWriterOnCleanup(t, w)
+			if err := w.CreateArchive("cm"); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.AddFile(src, m.method); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			b := readTestFile(t, filepath.Join(dir, "cm.fz"))
+			_, entries, ftr := parseArchiveBytes(t, b)
+			e := entries[0]
+			if e.CompressionMethod != m.method {
+				t.Errorf("method = %d, want %d", e.CompressionMethod, m.method)
+			}
+			if e.OriginalSize != uint64(len(content)) {
+				t.Errorf("OriginalSize = %d, want %d", e.OriginalSize, len(content))
+			}
+			if e.CompressedSize == 0 || e.CompressedSize >= e.OriginalSize {
+				t.Errorf("CompressedSize = %d, expected 0 < size < %d", e.CompressedSize, e.OriginalSize)
+			}
+			if e.Checksum != crc32.ChecksumIEEE(content) {
+				t.Errorf("checksum must be over the original bytes")
+			}
+			if e.DataOffset != uint64(HeaderSize) || ftr.DirectoryOffset != e.DataOffset+e.CompressedSize {
+				t.Errorf("layout: offset=%d dirOffset=%d compressed=%d", e.DataOffset, ftr.DirectoryOffset, e.CompressedSize)
+			}
+		})
+	}
+}
+
+func TestAddFile_CompressedOffsetsChain(t *testing.T) {
+	dir := chdirTemp(t)
+	src := writeTestFile(t, dir, "src.bin", bytes.Repeat([]byte{7}, 5000))
+	w := &ArchiveWriter{}
+	closeWriterOnCleanup(t, w)
+	if err := w.CreateArchive("chain"); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []CompressionMethod{BestSpeed, None, HuffmanOnly} {
+		if err := w.AddFile(src, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	next := uint64(HeaderSize)
+	for i, e := range w.Files {
+		if e.DataOffset != next {
+			t.Errorf("entry %d offset = %d, want %d", i, e.DataOffset, next)
+		}
+		next += e.CompressedSize
+	}
+}
+
+func TestAddFile_FailedCompressedCopyRollsBack(t *testing.T) {
+	dir := chdirTemp(t)
+	w := &ArchiveWriter{}
+	closeWriterOnCleanup(t, w)
+	if err := w.CreateArchive("crb"); err != nil {
+		t.Fatal(err)
+	}
+	good := writeTestFile(t, dir, "g.txt", bytes.Repeat([]byte("g"), 1000))
+	if err := w.AddFile(good, Default); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := w.OutputFile.Stat()
+	sizeBefore := info.Size()
+
+	bad := filepath.Join(dir, "adir")
+	if err := os.Mkdir(bad, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.AddFile(bad, Default); err == nil {
+		t.Fatal("expected error adding a directory")
+	}
+	if len(w.Files) != 1 || w.Status != Active {
+		t.Fatalf("files=%d status=%d", len(w.Files), w.Status)
+	}
+	info, _ = w.OutputFile.Stat()
+	if info.Size() != sizeBefore {
+		t.Fatalf("output size = %d after failed AddFile, want %d", info.Size(), sizeBefore)
+	}
+	if err := w.AddFile(good, BestSpeed); err != nil {
+		t.Fatalf("AddFile after failure: %v", err)
+	}
+	if w.Files[1].DataOffset != uint64(sizeBefore) {
+		t.Fatalf("offset = %d, want %d", w.Files[1].DataOffset, sizeBefore)
 	}
 }

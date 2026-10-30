@@ -189,8 +189,8 @@ func (reader *ArchiveReader) ExtractFile(fileName string, dst string) (err error
 
 	defer func() {
 		if !success {
-			if err = os.Remove(dist.Name()); err != nil {
-				err = errors.Join(err, fmt.Errorf("READER::error deleting file: %s after failed extraction", dist.Name()))
+			if rmErr := os.Remove(dist.Name()); err != nil {
+				err = errors.Join(err, fmt.Errorf("READER::error deleting file: %s after failed extraction", dist.Name()), rmErr)
 				return
 			}
 

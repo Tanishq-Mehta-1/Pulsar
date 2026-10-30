@@ -122,6 +122,12 @@ func sampleBlobs() []blob {
 // are staged in a "src" sub-directory.
 func buildWithWriter(t *testing.T, archiveName string, files []blob) string {
 	t.Helper()
+	return buildWithWriterMethod(t, archiveName, files, None)
+}
+
+// buildWithWriterMethod is buildWithWriter with an explicit compression method.
+func buildWithWriterMethod(t *testing.T, archiveName string, files []blob, method CompressionMethod) string {
+	t.Helper()
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
@@ -137,7 +143,7 @@ func buildWithWriter(t *testing.T, archiveName string, files []blob) string {
 	}
 	for _, f := range files {
 		p := writeTestFile(t, src, f.name, f.data)
-		if err := w.AddFile(p); err != nil {
+		if err := w.AddFile(p, method); err != nil {
 			t.Fatalf("AddFile(%s): %v", f.name, err)
 		}
 	}

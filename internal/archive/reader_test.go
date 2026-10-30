@@ -167,7 +167,7 @@ func TestOpenArchive_RejectsMalformed(t *testing.T) {
 		}},
 		{"invalid compression method in directory", func(t *testing.T, a []byte) []byte {
 			d := directoryOf(t, a)
-			d[firstEntryMethodIdx] = 9
+			d[firstEntryMethodIdx] = 5 // not a defined method
 			return replaceDirectory(t, a, d, 2)
 		}},
 		{"directory offset/size wrap around uint64", func(t *testing.T, a []byte) []byte {
@@ -657,4 +657,124 @@ func truncate(b []byte, n int) []byte {
 		return b[:n]
 	}
 	return b
+}
+
+var allMethods = []struct {
+	name   string
+	method CompressionMethod
+}{
+	{"None", None},
+	{"Default", Default},
+	{"BestSpeed", BestSpeed},
+	{"BestCompression", BestCompression},
+	{"HuffmanOnly", HuffmanOnly},
+}
+
+func TestWriterReaderRoundTrip_AllMethods(t *testing.T) {
+	for _, m := range allMethods {
+		t.Run(m.name, func(t *testing.T) {
+			chdirTemp(t)
+			blobs := sampleBlobs()
+			path := buildWithWriterMethod(t, "rtm", blobs, m.method)
+			r := openReader(t, path)
+			for _, b := range blobs {
+				got, err := extractTo(t, r, b.name)
+				if err != nil {
+					t.Fatalf("%s: %v", b.name, err)
+				}
+				if !bytes.Equal(got, b.data) {
+					t.Fatalf("%s: extracted %d bytes differ from original %d", b.name, len(got), len(b.data))
+				}
+			}
+			for _, e := range r.Files {
+				if e.CompressionMethod != m.method {
+					t.Errorf("%s: method = %d, want %d", e.Filename, e.CompressionMethod, m.method)
+				}
+			}
+		})
+	}
+}
+
+func TestExtractFile_MixedMethodsInOneArchive(t *testing.T) {
+	dir := chdirTemp(t)
+	src := filepath.Join(dir, "src")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	w := &ArchiveWriter{}
+	closeWriterOnCleanup(t, w)
+	if err := w.CreateArchive("mixed"); err != nil {
+		t.Fatal(err)
+	}
+	var blobs []blob
+	for i, m := range allMethods {
+		b := blob{fmt.Sprintf("f%d.bin", i), bytes.Repeat([]byte("abc"), 1000+i)}
+		blobs = append(blobs, b)
+		if err := w.AddFile(writeTestFile(t, src, b.name, b.data), m.method); err != nil {
+			t.Fatalf("AddFile %s: %v", m.name, err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r := openReader(t, filepath.Join(dir, "mixed.fz"))
+	for _, b := range blobs {
+		got, err := extractTo(t, r, b.name)
+		if err != nil || !bytes.Equal(got, b.data) {
+			t.Fatalf("%s: err=%v equal=%v", b.name, err, bytes.Equal(got, b.data))
+		}
+	}
+}
+
+func TestExtractFile_CompressedCorruption(t *testing.T) {
+	chdirTemp(t)
+	data := bytes.Repeat([]byte("compressible "), 500)
+	path := buildWithWriterMethod(t, "cc", []blob{{"c.txt", data}}, BestCompression)
+	orig := readTestFile(t, path)
+	_, entries, _ := parseArchiveBytes(t, orig)
+	e := entries[0]
+
+	t.Run("flipped byte in compressed stream", func(t *testing.T) {
+		b := append([]byte{}, orig...)
+		b[e.DataOffset+e.CompressedSize/2] ^= 0xFF
+		r := openReader(t, writeArchiveBytes(t, b))
+		if _, err := extractTo(t, r, "c.txt"); err == nil {
+			t.Fatal("corrupted compressed data extracted without error")
+		}
+	})
+
+	t.Run("wrong original size", func(t *testing.T) {
+		ents := append([]FileEntry{}, entries...)
+		ents[0].OriginalSize += 7
+		bad := assembleArchive(t, orig[HeaderSize:footerOf(t, orig).DirectoryOffset], ents)
+		r := openReader(t, writeArchiveBytes(t, bad))
+		if _, err := extractTo(t, r, "c.txt"); err == nil {
+			t.Fatal("size mismatch not detected")
+		}
+	})
+
+	t.Run("wrong checksum", func(t *testing.T) {
+		ents := append([]FileEntry{}, entries...)
+		ents[0].Checksum ^= 1
+		bad := assembleArchive(t, orig[HeaderSize:footerOf(t, orig).DirectoryOffset], ents)
+		r := openReader(t, writeArchiveBytes(t, bad))
+		if _, err := extractTo(t, r, "c.txt"); err == nil {
+			t.Fatal("checksum mismatch not detected")
+		}
+	})
+
+	t.Run("garbage that is not a deflate stream", func(t *testing.T) {
+		junk := bytes.Repeat([]byte{0xFF}, 64)
+		ent := entryForData("j", uint64(HeaderSize), junk)
+		ent.CompressionMethod = Default
+		ent.OriginalSize = 10
+		r := openReader(t, writeArchiveBytes(t, assembleArchive(t, junk, []FileEntry{ent})))
+		if p := capturePanic(func() {
+			if _, err := extractTo(t, r, "j"); err == nil {
+				t.Error("expected error")
+			}
+		}); p != nil {
+			t.Fatalf("panic: %v", p)
+		}
+	})
 }

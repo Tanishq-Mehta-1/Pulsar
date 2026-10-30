@@ -49,7 +49,7 @@ func TestSerializeFileEntry_Layout(t *testing.T) {
 		DataOffset:        0x0102030405060708,
 		OriginalSize:      0x1112131415161718,
 		CompressedSize:    0x2122232425262728,
-		CompressionMethod: Basic,
+		CompressionMethod: BestSpeed,
 		Checksum:          0xDEADBEEF,
 	}
 	want := []byte{
@@ -89,7 +89,7 @@ func TestSerializeFileEntry_Length(t *testing.T) {
 }
 
 func TestSerializeFileEntry_CompressionMethodByte(t *testing.T) {
-	for _, m := range []CompressionMethod{None, Basic} {
+	for _, m := range []CompressionMethod{None, BestSpeed, BestCompression, Default, HuffmanOnly} {
 		e := validEntry("f")
 		e.CompressionMethod = m
 		buf, err := SerializeFileEntry(&e)
@@ -150,7 +150,7 @@ func TestFileEntryRoundTrip(t *testing.T) {
 			FileEntry{
 				FilenameLength: 1, Filename: "m",
 				DataOffset: math.MaxUint64, OriginalSize: math.MaxUint64, CompressedSize: math.MaxUint64,
-				CompressionMethod: Basic, Checksum: math.MaxUint32,
+				CompressionMethod: BestSpeed, Checksum: math.MaxUint32,
 			},
 		},
 		{
@@ -159,7 +159,7 @@ func TestFileEntryRoundTrip(t *testing.T) {
 		},
 		{
 			"compressed smaller than original",
-			FileEntry{FilenameLength: 1, Filename: "c", DataOffset: 12, OriginalSize: 1000, CompressedSize: 400, CompressionMethod: Basic, Checksum: 7},
+			FileEntry{FilenameLength: 1, Filename: "c", DataOffset: 12, OriginalSize: 1000, CompressedSize: 400, CompressionMethod: BestSpeed, Checksum: 7},
 		},
 	}
 	for _, tc := range tests {
@@ -293,7 +293,11 @@ func TestDeserializeFileEntry_CompressionMethod(t *testing.T) {
 			if p := capturePanic(func() { got, _, derr = DeserializeFileEntry(data) }); p != nil {
 				t.Fatalf("name %q method %d: panic %v", name, m, p)
 			}
-			valid := CompressionMethod(m) == None || CompressionMethod(m) == Basic
+			valid := false
+			switch CompressionMethod(m) {
+			case None, BestSpeed, BestCompression, Default, HuffmanOnly:
+				valid = true
+			}
 			if valid && derr != nil {
 				t.Errorf("name %q method %d rejected: %v", name, m, derr)
 			}
