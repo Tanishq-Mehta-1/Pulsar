@@ -6,18 +6,25 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 type Job struct {
 	Path              string
+	FileID            uint32
 	CompressionMethod CompressionMethod
 }
 
 type Result struct {
-	Path         string
-	Reader       *io.PipeReader
-	OriginalSize uint64
-	Metadata     chan CompressionMetadata
+	FileID            uint32
+	Path              string
+	TempPath          string
+	Filename          string
+	OriginalSize      uint64
+	CompressedSize    uint64
+	Checksum          uint32
+	CompressionMethod CompressionMethod
+	Err               error
 }
 
 type CompressionMetadata struct {
@@ -38,60 +45,59 @@ func (counter *CountWriter) Write(p []byte) (n int, err error) {
 	return
 }
 
-func CompressFile(job Job) Result {
+func CompressFile(job Job) (res Result) {
 
-	path := job.Path
+	res.Path = job.Path
+	res.CompressionMethod = job.CompressionMethod
+	res.FileID = job.FileID
 
-	res := Result{Path: path}
+	fileName := filepath.Base(res.Path)
+	if !checkFilename(fileName) {
+		res.Err = fmt.Errorf("WORKER::invalid filename [%s]", fileName)
+		return
+	}
+	res.Filename = fileName
 
-	file, err := os.Open(path)
+	file, err := os.Open(job.Path)
 	if err != nil {
+		res.Err = err
 		return res
 	}
+
+	defer file.Close()
 
 	fileInfo, infoErr := file.Stat()
 	if infoErr != nil {
-		file.Close()
-		return res
+		res.Err = infoErr
+		return
 	}
-
 	res.OriginalSize = uint64(fileInfo.Size())
 
-	pipeReader, pipeWriter := io.Pipe()
-
-	res.Reader = pipeReader
-	res.Metadata = make(chan CompressionMetadata, 1)
-	go compressionHelper(pipeWriter, job.CompressionMethod, file, res.Metadata, res.OriginalSize)
-
-	return res //return with pipeReader only
-}
-
-func compressionHelper(pipeWriter *io.PipeWriter,
-	level CompressionMethod,
-	file *os.File,
-	res chan CompressionMetadata,
-	originalSize uint64) {
-
-	defer file.Close()
-	metadata := CompressionMetadata{}
-
-	defer func() {
-		res <- metadata
-	}()
+	temp, err := os.CreateTemp("", "pulsar-*")
+	if err != nil {
+		res.Err = fmt.Errorf("WORKER::error creating temporary file")
+		return
+	}
 
 	success := false
 	defer func() {
-		if !success {
-			pipeWriter.CloseWithError(metadata.Err)
-		} else {
-			pipeWriter.Close()
+		if err := temp.Close(); err != nil {
+			res.Err = err
 		}
-	}()
 
-	counter := &CountWriter{writer: pipeWriter}
-	flateWriter, err := flate.NewWriter(counter, int(level))
+		if !success {
+			if err := os.Remove(temp.Name()); err != nil {
+				res.Err = err
+			}
+		}
+
+	}()
+	res.TempPath = temp.Name()
+
+	counter := &CountWriter{writer: temp}
+	flateWriter, err := flate.NewWriter(counter, int(job.CompressionMethod))
 	if err != nil {
-		metadata.Err = err
+		res.Err = err
 		return
 	}
 
@@ -99,23 +105,25 @@ func compressionHelper(pipeWriter *io.PipeWriter,
 	multiWriter := io.MultiWriter(hasher, flateWriter)
 
 	n, copyErr := io.Copy(multiWriter, file)
-	if copyErr != nil || n != int64(originalSize) {
+	if copyErr != nil || n != int64(res.OriginalSize) {
 		if copyErr != nil {
-			metadata.Err = copyErr
+			res.Err = copyErr
 			return
 		}
 
-		metadata.Err = fmt.Errorf("COMPRESS::read %d bytes instead of %d", n, originalSize)
+		res.Err = fmt.Errorf("COMPRESS::read %d bytes instead of %d", n, res.OriginalSize)
 		return
 	}
 
 	if err := flateWriter.Close(); err != nil {
-		metadata.Err = err
+		res.Err = err
 		return
 	}
 
-	metadata.Checksum = hasher.Sum32()
-	metadata.CompressedSize = uint64(counter.bytesWritten)
+	res.Checksum = hasher.Sum32()
+	res.CompressedSize = uint64(counter.bytesWritten)
 
 	success = true
+
+	return res
 }

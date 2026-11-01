@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"os"
 	"pulsar/internal/archive"
 )
 
@@ -51,7 +53,13 @@ func test_writer() {
 
 func test_goroutines() {
 
-	archive.Consumer(archive.Job{Path: "/home/deo3d2y/Desktop/Dev/Pulsar/testdata/a.txt"})
+	res := archive.CompressFile(archive.Job{
+		Path:              "/home/deo3d2y/Desktop/Dev/Pulsar/testdata/big.txt",
+		FileID:            1,
+		CompressionMethod: -2})
+	fmt.Print(res)
+
+	os.Remove(res.TempPath)
 }
 
 func main() {

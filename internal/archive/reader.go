@@ -125,7 +125,6 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 
 		switch fileEntry.CompressionMethod {
 		case None, BestCompression, BestSpeed, HuffmanOnly, Default:
-			break
 		default:
 			return fmt.Errorf("READER::incorrect compression method")
 		}
@@ -224,16 +223,11 @@ func (reader *ArchiveReader) ExtractFile(fileName string, dst string) (err error
 			err = fmt.Errorf("READER::checksum invalid. Calculated: %d, Actual: %d", checksum, requiredFileEntry.Checksum)
 			return err
 		}
-
-		break
-
 	case Default, BestSpeed, BestCompression, HuffmanOnly:
 
 		if err = reader.extractCompressed(requiredFileEntry, dist); err != nil {
 			return err
 		}
-
-		break
 	default:
 		return errors.New("READER::unsupported compression method")
 	}

@@ -231,13 +231,11 @@ func (writer *ArchiveWriter) AddFile(path string, method CompressionMethod) erro
 
 		checksum = hasher.Sum32()
 		compressedSize = originalSize
-		break
 	case Default, BestCompression, BestSpeed, HuffmanOnly:
 		compressedSize, checksum, err = writer.writeCompressed(file, method, dataOffset, originalSize)
 		if err != nil {
 			return err
 		}
-		break
 	default:
 		return fmt.Errorf("invalid compression method")
 	}
