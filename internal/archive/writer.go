@@ -161,6 +161,8 @@ func (writer *ArchiveWriter) writeCompressed(file *os.File, method CompressionMe
 	return compressedSize, checksum, nil
 }
 
+func (writer *ArchiveWriter)
+
 func (writer *ArchiveWriter) AddFile(path string, method CompressionMethod) error {
 
 	if writer.Status != Active {
@@ -325,3 +327,4 @@ func (writer *ArchiveWriter) Close() error {
 
 	return nil
 }
+

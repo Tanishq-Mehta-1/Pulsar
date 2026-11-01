@@ -8,9 +8,9 @@ import (
 	"sync"
 )
 
-func Worker(
-	jobs <-chan Job,
-	results chan<- Result,
+func CompressionWorker(
+	jobs <-chan JobCompress,
+	results chan<- ResultCompress,
 	wg *sync.WaitGroup,
 ) {
 
@@ -22,19 +22,19 @@ func Worker(
 	}
 }
 
-func StartWorkerPool(
-	jobsList []Job,
-	workerCount int) <-chan Result {
+func StartCompressionPool(
+	jobsList []JobCompress,
+	workerCount int) <-chan ResultCompress {
 
 	wg := sync.WaitGroup{}
 
 	queueCapacity := 5 //arbitrary rn
-	jobs := make(chan Job, queueCapacity)
-	res := make(chan Result, queueCapacity)
+	jobs := make(chan JobCompress, queueCapacity)
+	res := make(chan ResultCompress, queueCapacity)
 
 	for range workerCount {
 		wg.Add(1)
-		go Worker(jobs, res, &wg)
+		go CompressionWorker(jobs, res, &wg)
 	}
 
 	for _, job := range jobsList {
@@ -55,7 +55,7 @@ func StartWorkerPool(
 
 func appendResult(
 	writer *ArchiveWriter,
-	res Result,
+	res ResultCompress,
 	dataOffset uint64,
 	tmp *os.File) (err error) {
 	ok := false
@@ -97,7 +97,9 @@ func appendResult(
 	return nil
 }
 
-func WriteArchive(writer *ArchiveWriter, results <-chan Result) error {
+func WriteArchive(
+	writer *ArchiveWriter,
+	results <-chan ResultCompress) error {
 
 	if writer.Status != Active {
 		return fmt.Errorf("WORKER::invalid writer status: %d", writer.Status)
@@ -142,4 +144,55 @@ func WriteArchive(writer *ArchiveWriter, results <-chan Result) error {
 	}
 
 	return nil
+}
+
+func DecompressionWorker(
+	jobs <-chan JobDecompress,
+	errors chan<- error,
+	archive *os.File,
+	wg *sync.WaitGroup,
+) {
+
+	defer wg.Done()
+
+	for job := range jobs {
+		entry := job.Entry
+		section := io.NewSectionReader(
+			archive,
+			int64(entry.DataOffset),
+			int64(entry.CompressedSize))
+
+		if err := DecompressFile(&entry, section); err != nil {
+			errors <- err
+		}
+	}
+}
+
+func StartDecompressionPool(
+	jobsList []JobDecompress,
+	reader *ArchiveReader,
+	workerCount int) {
+
+	wg := sync.WaitGroup{}
+
+	queueCapacity := 5 //arbitrary rn
+	jobs := make(chan JobDecompress, queueCapacity)
+	errors := make(chan error, len(jobsList))
+
+	for range workerCount {
+		wg.Add(1)
+		go DecompressionWorker(jobs, errors, reader.OutputFile, &wg)
+	}
+
+	for _, job := range jobsList {
+		jobs <- job
+	}
+
+	close(jobs)
+
+	wg.Wait()
+
+	for err := range errors {
+		fmt.Println(err)
+	}
 }

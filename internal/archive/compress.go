@@ -9,14 +9,12 @@ import (
 	"path/filepath"
 )
 
-type Job struct {
+type JobCompress struct {
 	Path              string
-	FileID            uint32
 	CompressionMethod CompressionMethod
 }
 
-type Result struct {
-	FileID            uint32
+type ResultCompress struct {
 	Path              string
 	TempPath          string
 	Filename          string
@@ -25,12 +23,6 @@ type Result struct {
 	Checksum          uint32
 	CompressionMethod CompressionMethod
 	Err               error
-}
-
-type CompressionMetadata struct {
-	CompressedSize uint64
-	Checksum       uint32
-	Err            error
 }
 
 type CountWriter struct {
@@ -45,15 +37,14 @@ func (counter *CountWriter) Write(p []byte) (n int, err error) {
 	return
 }
 
-func CompressFile(job Job) (res Result) {
+func CompressFile(job JobCompress) (res ResultCompress) {
 
 	res.Path = job.Path
 	res.CompressionMethod = job.CompressionMethod
-	res.FileID = job.FileID
 
 	fileName := filepath.Base(res.Path)
 	if !checkFilename(fileName) {
-		res.Err = fmt.Errorf("WORKER::invalid filename [%s]", fileName)
+		res.Err = fmt.Errorf("COMPRESS::invalid filename [%s]", fileName)
 		return
 	}
 	res.Filename = fileName
@@ -75,7 +66,7 @@ func CompressFile(job Job) (res Result) {
 
 	temp, err := os.CreateTemp("", "pulsar-*")
 	if err != nil {
-		res.Err = fmt.Errorf("WORKER::error creating temporary file")
+		res.Err = fmt.Errorf("COMPRESS::error creating temporary file")
 		return
 	}
 

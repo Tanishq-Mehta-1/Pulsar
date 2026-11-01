@@ -53,9 +53,8 @@ func test_writer() {
 
 func test_goroutines() {
 
-	res := archive.CompressFile(archive.Job{
+	res := archive.CompressFile(archive.JobCompress{
 		Path:              "/home/deo3d2y/Desktop/Dev/Pulsar/testdata/big.txt",
-		FileID:            1,
 		CompressionMethod: -2})
 	fmt.Print(res)
 
