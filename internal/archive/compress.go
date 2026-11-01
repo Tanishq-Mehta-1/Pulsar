@@ -14,10 +14,12 @@ type Job struct {
 }
 
 type Result struct {
-	Path         string
-	Reader       *io.PipeReader
-	OriginalSize uint64
-	Metadata     chan CompressionMetadata
+	Path              string
+	Filename          string
+	CompressionMethod CompressionMethod
+	Reader            *io.PipeReader
+	OriginalSize      uint64
+	Metadata          chan CompressionMetadata
 }
 
 type CompressionMetadata struct {
