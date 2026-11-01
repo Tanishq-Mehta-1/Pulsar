@@ -1,6 +1,10 @@
 package archive
 
 import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
 	"sync"
 )
 
@@ -49,89 +53,93 @@ func StartWorkerPool(
 	return res
 }
 
-// // need a better name
+func appendResult(
+	writer *ArchiveWriter,
+	res Result,
+	dataOffset uint64,
+	tmp *os.File) (err error) {
+	ok := false
 
-// // assuming the writer has already opened the archive and is now
-// // writing to the archive
+	//cleanup function
+	defer func() {
 
-// // assuming that the corresponding entry has the originalSize, filename
-// // and method written
-// func ArchiveWrite(
-// 	results <-chan Result,
-// 	writer *ArchiveWriter,
-// ) error {
+		os.Remove(tmp.Name())
+		tmp.Close()
 
-// 	if writer.Status != Active {
-// 		return fmt.Errorf("WORKER::archive writer in invalid state: %s", writer.Status)
-// 	}
+		if !ok {
 
-// 	for res := range results {
+			rollbackErr := writer.OutputFile.Truncate(int64(dataOffset))
+			if rollbackErr != nil {
+				writer.Status = Failed
+				err = errors.Join(err, rollbackErr)
+			}
 
-// 		outputInfo, err := writer.OutputFile.Stat()
-// 		if err != nil {
-// 			return fmt.Errorf("WRITER::error reading output file stats: %v", err)
-// 		}
+			_, seekErr := writer.OutputFile.Seek(int64(dataOffset), io.SeekStart)
+			if seekErr != nil {
+				//memory truncated but file pointer not moved
+				writer.Status = Failed
+				err = errors.Join(err, seekErr)
+			}
+		}
+	}()
 
-// 		dataOffset := uint64(outputInfo.Size())
+	n, copyErr := io.Copy(writer.OutputFile, tmp)
+	if copyErr != nil {
+		return copyErr
+	}
 
-// 		ok := false
+	if n != int64(res.CompressedSize) {
+		return fmt.Errorf("WORKER::wrote %d bytes instead of %d", n, res.CompressedSize)
 
-// 		defer func() {
-// 			if !ok {
-// 				//redo changes
-// 				rollbackErr := writer.OutputFile.Truncate(int64(dataOffset))
-// 				if rollbackErr != nil {
-// 					writer.Status = Failed
-// 					err = errors.Join(err, rollbackErr)
-// 				}
+	}
 
-// 				_, seekErr := writer.OutputFile.Seek(int64(dataOffset), io.SeekStart)
-// 				if seekErr != nil {
-// 					//memory truncated but file pointer not moved
-// 					writer.Status = Failed
-// 					err = errors.Join(err, rollbackErr)
-// 				}
-// 			}
-// 		}()
+	ok = true
+	return nil
+}
 
-// 		if len(res.Filename) > 255 {
-// 			return fmt.Errorf("WORKER::filename too long: %s", res.Filename)
-// 		}
+func WriteArchive(writer *ArchiveWriter, results <-chan Result) error {
 
-// 		//writing to archive the compressed stream
-// 		n, err := io.Copy(writer.OutputFile, res.Reader)
-// 		if err != nil {
-// 			return err
-// 		}
+	if writer.Status != Active {
+		return fmt.Errorf("WORKER::invalid writer status: %d", writer.Status)
+	}
 
-// 		if err := res.Reader.Close(); err != nil {
-// 			return fmt.Errorf("WORKER::error closing pipeReader: %s", err)
-// 		}
+	for res := range results {
+		if res.Err != nil {
+			return res.Err
+		}
 
-// 		//completely read
-// 		metadata := <-res.Metadata
-// 		if metadata.Err != nil {
-// 			return metadata.Err
-// 		}
+		if len(res.Filename) > 255 {
+			return fmt.Errorf("WORKER::filename too long: %s", res.Filename)
+		}
 
-// 		if n != int64(metadata.CompressedSize) {
-// 			return fmt.Errorf("WORKER::read %d bytes instead %d", n, metadata.CompressedSize)
-// 		}
+		tmp, tmpErr := os.Open(res.TempPath)
+		if tmpErr != nil {
+			return tmpErr
+		}
 
-// 		fileEntry := FileEntry{
-// 			FilenameLength:    uint8(len(res.Filename)),
-// 			Filename:          res.Filename,
-// 			DataOffset:        dataOffset,
-// 			OriginalSize:      res.OriginalSize,
-// 			CompressedSize:    metadata.CompressedSize,
-// 			CompressionMethod: res.CompressionMethod,
-// 			Checksum:          metadata.Checksum,
-// 		}
+		outInfo, outErr := writer.OutputFile.Stat()
+		if outErr != nil {
+			return outErr
+		}
 
-// 		writer.Files = append(writer.Files, fileEntry)
+		dataOffset := uint64(outInfo.Size())
 
-// 		ok = true
-// 	}
+		if err := appendResult(writer, res, dataOffset, tmp); err != nil {
+			return err
+		}
 
-// 	return nil
-// }
+		entry := FileEntry{
+			FilenameLength:    uint8((len(res.Filename))),
+			Filename:          res.Filename,
+			DataOffset:        dataOffset,
+			OriginalSize:      res.OriginalSize,
+			CompressedSize:    res.CompressedSize,
+			CompressionMethod: res.CompressionMethod,
+			Checksum:          res.Checksum,
+		}
+
+		writer.Files = append(writer.Files, entry)
+	}
+
+	return nil
+}
