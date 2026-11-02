@@ -208,9 +208,15 @@ func StartDecompressionPool(
 
 	close(jobs)
 
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(errors)
+	}()
 
+	var firstErr error
 	for err := range errors {
-		fmt.Println(err)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 }

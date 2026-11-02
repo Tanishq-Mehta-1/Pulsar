@@ -38,17 +38,10 @@ func test_writer() {
 		log.Fatalf("Archive error: %s", err)
 	}
 
-	if err = reader.ExtractFile("a.txt", "a.txt"); err != nil {
-		log.Fatalf("Error reading a.txt: %s", err)
-	}
-	if err = reader.ExtractFile("b.txt", "b.txt"); err != nil {
-		log.Fatalf("Error reading b.txt: %s", err)
-	}
-	if err = reader.ExtractFile("emoji.jpeg", "fun.jpeg"); err != nil {
-		log.Fatalf("Error reading emoji.jpeg: %s", err)
-	}
-	if err = reader.ExtractFile("big.txt", "big.txt"); err != nil {
-		log.Fatalf("Error reading big.txt: %s", err)
+	reader.ExtractAllConcurrent(5)
+
+	if err = reader.Close(); err != nil {
+		log.Fatalf("Archive::%s", err)
 	}
 }
 

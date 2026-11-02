@@ -2,6 +2,7 @@ package archive
 
 import (
 	"compress/flate"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -12,9 +13,10 @@ type JobDecompress struct {
 	Entry FileEntry
 }
 
-func DecompressFile(entry *FileEntry, section *io.SectionReader) error {
-	flateReader := flate.NewReader(section)
-	defer flateReader.Close()
+func DecompressFile(entry *FileEntry, section *io.SectionReader) (err error) {
+	if len(entry.Filename) > 255 {
+		return fmt.Errorf("DECOMPRESS::filename is too long for file: %s", entry.Filename)
+	}
 
 	//writing to local dir with same name
 	dst, err := os.Create(entry.Filename)
@@ -24,19 +26,38 @@ func DecompressFile(entry *FileEntry, section *io.SectionReader) error {
 
 	defer dst.Close()
 
-	hasher := crc32.NewIEEE()
-	mw := io.MultiWriter(hasher, dst)
-
 	success := false
 	defer func() {
 		if !success {
-			os.Remove(dst.Name())
+			if rmErr := os.Remove(dst.Name()); err != nil {
+				err = errors.Join(err, fmt.Errorf("DECOMPRESS::error deleting file: %s after failed extraction", dst.Name()), rmErr)
+			}
 		}
 	}()
 
-	n, err := io.Copy(mw, flateReader)
-	if err != nil {
-		return err
+	hasher := crc32.NewIEEE()
+	mw := io.MultiWriter(hasher, dst)
+
+	var n int64
+	switch entry.CompressionMethod {
+
+	case None:
+		n, err = io.Copy(mw, section)
+		if err != nil {
+			return err
+		}
+
+	case Default, BestCompression, BestSpeed, HuffmanOnly:
+		flateReader := flate.NewReader(section)
+		defer flateReader.Close()
+
+		n, err = io.Copy(mw, flateReader)
+		if err != nil {
+			return err
+		}
+
+	default:
+		return fmt.Errorf("DECOMPRESS::incorrect compression method: %d", entry.CompressionMethod)
 	}
 
 	if n != int64(entry.OriginalSize) {

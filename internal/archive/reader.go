@@ -236,6 +236,23 @@ func (reader *ArchiveReader) ExtractFile(fileName string, dst string) (err error
 	return nil
 }
 
+func (reader *ArchiveReader) ExtractAllConcurrent(numWorkers int) error {
+
+	if reader.Status != Active {
+		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
+	}
+
+	jobs := make([]JobDecompress, 0, len(reader.Files))
+
+	for _, entry := range reader.Files {
+		jobs = append(jobs, JobDecompress{Entry: entry})
+	}
+
+	StartDecompressionPool(jobs, reader, numWorkers)
+
+	return nil
+}
+
 func (reader *ArchiveReader) extractCompressed(entry FileEntry, dst *os.File) (err error) {
 
 	sectionReader := io.NewSectionReader(reader.OutputFile, int64(entry.DataOffset), int64(entry.CompressedSize))
