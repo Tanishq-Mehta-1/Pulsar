@@ -105,29 +105,47 @@ func WriteArchive(
 		return fmt.Errorf("WORKER::invalid writer status: %d", writer.Status)
 	}
 
+	var firstErr error
+
 	for res := range results {
 		if res.Err != nil {
-			return res.Err
+
+			if firstErr == nil {
+				firstErr = res.Err
+			}
+			continue
+		}
+
+		if firstErr != nil {
+			os.Remove(res.TempPath)
+			continue
 		}
 
 		if len(res.Filename) > 255 {
-			return fmt.Errorf("WORKER::filename too long: %s", res.Filename)
+			firstErr = fmt.Errorf("WORKER::filename too long: %s", res.Filename)
+			continue
 		}
 
 		tmp, tmpErr := os.Open(res.TempPath)
 		if tmpErr != nil {
-			return tmpErr
+			firstErr = tmpErr
+			os.Remove(res.TempPath)
+			continue
 		}
 
 		outInfo, outErr := writer.OutputFile.Stat()
 		if outErr != nil {
-			return outErr
+			firstErr = outErr
+			os.Remove(res.TempPath)
+			continue
 		}
 
 		dataOffset := uint64(outInfo.Size())
 
 		if err := appendResult(writer, res, dataOffset, tmp); err != nil {
-			return err
+			firstErr = err
+			os.Remove(res.TempPath)
+			continue
 		}
 
 		entry := FileEntry{
@@ -143,7 +161,7 @@ func WriteArchive(
 		writer.Files = append(writer.Files, entry)
 	}
 
-	return nil
+	return firstErr
 }
 
 func DecompressionWorker(

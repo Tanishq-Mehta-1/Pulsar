@@ -14,19 +14,20 @@ func test_writer() {
 		log.Fatalf("WRITER::%s", err)
 	}
 
-	if err := writer.AddFile("/home/deo3d2y/Desktop/Dev/Pulsar/testdata/big.txt", archive.Default); err != nil {
+	files := []archive.FileStruct{
+		{Path: "/home/deo3d2y/Desktop/Dev/Pulsar/testdata/a.txt",
+			Method: archive.Default},
+		{Path: "/home/deo3d2y/Desktop/Dev/Pulsar/testdata/b.txt",
+			Method: archive.Default},
+		{Path: "/home/deo3d2y/Desktop/Dev/Pulsar/testdata/big.txt",
+			Method: archive.Default},
+		{Path: "/home/deo3d2y/Desktop/Dev/Pulsar/testdata/emoji.jpeg",
+			Method: archive.Default}}
+
+	if err := writer.AddFilesConcurrent(files, 4); err != nil {
 		log.Fatalf("WRITER::%s", err)
 	}
 
-	if err := writer.AddFile("/home/deo3d2y/Desktop/Dev/Pulsar/testdata/a.txt", archive.Default); err != nil {
-		log.Fatalf("WRITER::%s", err)
-	}
-	if err := writer.AddFile("/home/deo3d2y/Desktop/Dev/Pulsar/testdata/b.txt", archive.Default); err != nil {
-		log.Fatalf("WRITER::%s", err)
-	}
-	if err := writer.AddFile("//home/deo3d2y/Desktop/Dev/Pulsar/testdata/emoji.jpeg", archive.Default); err != nil {
-		log.Fatalf("WRITER::%s", err)
-	}
 	if err := writer.Close(); err != nil {
 		log.Fatalf("WRITER::%s", err)
 	}
@@ -62,5 +63,5 @@ func test_goroutines() {
 }
 
 func main() {
-	test_goroutines()
+	test_writer()
 }

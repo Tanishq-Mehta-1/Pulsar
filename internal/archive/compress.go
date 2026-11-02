@@ -2,6 +2,7 @@ package archive
 
 import (
 	"compress/flate"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -73,12 +74,13 @@ func CompressFile(job JobCompress) (res ResultCompress) {
 	success := false
 	defer func() {
 		if err := temp.Close(); err != nil {
-			res.Err = err
+			res.Err = errors.Join(res.Err, err)
+			success = false
 		}
 
 		if !success {
 			if err := os.Remove(temp.Name()); err != nil {
-				res.Err = err
+				res.Err = errors.Join(res.Err, err)
 			}
 		}
 
@@ -86,29 +88,46 @@ func CompressFile(job JobCompress) (res ResultCompress) {
 	res.TempPath = temp.Name()
 
 	counter := &CountWriter{writer: temp}
-	flateWriter, err := flate.NewWriter(counter, int(job.CompressionMethod))
-	if err != nil {
-		res.Err = err
-		return
-	}
-
 	hasher := crc32.NewIEEE()
-	multiWriter := io.MultiWriter(hasher, flateWriter)
 
-	n, copyErr := io.Copy(multiWriter, file)
-	if copyErr != nil || n != int64(res.OriginalSize) {
-		if copyErr != nil {
-			res.Err = copyErr
+	switch job.CompressionMethod {
+	case None:
+		multiWriter := io.MultiWriter(hasher, counter)
+
+		n, copyErr := io.Copy(multiWriter, file)
+		if copyErr != nil || n != int64(res.OriginalSize) {
+			if copyErr != nil {
+				res.Err = copyErr
+				return
+			}
+
+			res.Err = fmt.Errorf("COMPRESS::read %d bytes instead of %d", n, res.OriginalSize)
+			return
+		}
+	default:
+		flateWriter, err := flate.NewWriter(counter, int(job.CompressionMethod))
+		if err != nil {
+			res.Err = err
 			return
 		}
 
-		res.Err = fmt.Errorf("COMPRESS::read %d bytes instead of %d", n, res.OriginalSize)
-		return
-	}
+		multiWriter := io.MultiWriter(hasher, flateWriter)
 
-	if err := flateWriter.Close(); err != nil {
-		res.Err = err
-		return
+		n, copyErr := io.Copy(multiWriter, file)
+		if copyErr != nil || n != int64(res.OriginalSize) {
+			if copyErr != nil {
+				res.Err = copyErr
+				return
+			}
+
+			res.Err = fmt.Errorf("COMPRESS::read %d bytes instead of %d", n, res.OriginalSize)
+			return
+		}
+
+		if err := flateWriter.Close(); err != nil {
+			res.Err = err
+			return
+		}
 	}
 
 	res.Checksum = hasher.Sum32()

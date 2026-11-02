@@ -28,6 +28,11 @@ type ArchiveWriter struct {
 	Status     ObjStatus
 }
 
+type FileStruct struct {
+	Path   string
+	Method CompressionMethod
+}
+
 func checkFilename(fileName string) bool {
 	if len(fileName) > 255 || strings.Contains(fileName, "/") {
 		return false
@@ -131,7 +136,7 @@ func (writer *ArchiveWriter) writeCompressed(file *os.File, method CompressionMe
 			if seekErr != nil {
 				//memory truncated but file pointer not moved
 				writer.Status = Failed
-				err = errors.Join(err, rollbackErr)
+				err = errors.Join(err, seekErr)
 			}
 		}
 	}()
@@ -161,21 +166,51 @@ func (writer *ArchiveWriter) writeCompressed(file *os.File, method CompressionMe
 	return compressedSize, checksum, nil
 }
 
-func (writer *ArchiveWriter)
-
-func (writer *ArchiveWriter) AddFile(path string, method CompressionMethod) error {
+func (writer *ArchiveWriter) AddFilesConcurrent(files []FileStruct, numWorkers int) error {
 
 	if writer.Status != Active {
 		return fmt.Errorf("WRITER::invalid ArchiveWriter status %d", writer.Status)
 	}
 
-	fileName := filepath.Base(path)
+	if numWorkers <= 0 {
+		return fmt.Errorf("WRITER::worker count must be positive")
+	}
+
+	jobs := make([]JobCompress, 0, len(files))
+	for _, file := range files {
+
+		switch file.Method {
+		case None, BestCompression, BestSpeed, Default, HuffmanOnly:
+			break
+		default:
+			return fmt.Errorf("WRITER::incorrect compression method: %d", file.Method)
+		}
+
+		jobs = append(jobs, JobCompress{Path: file.Path, CompressionMethod: file.Method})
+	}
+
+	res := StartCompressionPool(jobs, numWorkers)
+
+	if err := WriteArchive(writer, res); err != nil {
+		return fmt.Errorf("WRITER::error writing to archive concurrently: %w", err)
+	}
+
+	return nil
+}
+
+func (writer *ArchiveWriter) AddFile(fileInput FileStruct) error {
+
+	if writer.Status != Active {
+		return fmt.Errorf("WRITER::invalid ArchiveWriter status %d", writer.Status)
+	}
+
+	fileName := filepath.Base(fileInput.Path)
 
 	if len(fileName) > 255 {
 		return errors.New("WRITER::filename too long")
 	}
 
-	file, err := os.Open(path)
+	file, err := os.Open(fileInput.Path)
 	if err != nil {
 		return err
 	}
@@ -194,11 +229,11 @@ func (writer *ArchiveWriter) AddFile(path string, method CompressionMethod) erro
 
 	dataOffset := uint64(outputInfo.Size())
 	originalSize := uint64(fileInfo.Size())
-	compressionMethod := method
+	compressionMethod := fileInput.Method
 	var checksum uint32
 	var compressedSize uint64
 
-	switch method {
+	switch fileInput.Method {
 	case None:
 		//compress the data
 		hasher := crc32.NewIEEE()
@@ -234,7 +269,7 @@ func (writer *ArchiveWriter) AddFile(path string, method CompressionMethod) erro
 		checksum = hasher.Sum32()
 		compressedSize = originalSize
 	case Default, BestCompression, BestSpeed, HuffmanOnly:
-		compressedSize, checksum, err = writer.writeCompressed(file, method, dataOffset, originalSize)
+		compressedSize, checksum, err = writer.writeCompressed(file, fileInput.Method, dataOffset, originalSize)
 		if err != nil {
 			return err
 		}
@@ -327,4 +362,3 @@ func (writer *ArchiveWriter) Close() error {
 
 	return nil
 }
-
