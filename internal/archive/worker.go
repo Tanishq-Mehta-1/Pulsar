@@ -186,14 +186,13 @@ func DecompressionWorker(
 			fmt.Println("Decompression error:", err)
 			errors <- err
 		}
-
 	}
 }
 
 func StartDecompressionPool(
 	jobsList []JobDecompress,
 	reader *ArchiveReader,
-	workerCount int) {
+	workerCount int) error {
 
 	wg := sync.WaitGroup{}
 
@@ -223,4 +222,6 @@ func StartDecompressionPool(
 			firstErr = err
 		}
 	}
+
+	return firstErr
 }

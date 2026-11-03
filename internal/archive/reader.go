@@ -7,6 +7,7 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 type ArchiveReader struct {
@@ -236,7 +237,7 @@ func (reader *ArchiveReader) ExtractFile(fileName string, dst string) (err error
 	return nil
 }
 
-func (reader *ArchiveReader) ExtractAllConcurrent(numWorkers int) error {
+func (reader *ArchiveReader) ExtractAllConcurrent(outputDir string, numWorkers int) error {
 
 	if reader.Status != Active {
 		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
@@ -247,12 +248,20 @@ func (reader *ArchiveReader) ExtractAllConcurrent(numWorkers int) error {
 	fmt.Println("Files in archive:", len(reader.Files))
 
 	for _, entry := range reader.Files {
-		jobs = append(jobs, JobDecompress{Entry: entry})
+		newEntry := entry
+
+		if !filepath.IsLocal(filepath.FromSlash(entry.Filename)) {
+			return fmt.Errorf("invalid archive path: %s", entry.Filename)
+		}
+
+		if outputDir != "" {
+			newEntry.Filename = filepath.Join(outputDir, filepath.FromSlash(entry.Filename))
+		}
+
+		jobs = append(jobs, JobDecompress{Entry: newEntry})
 	}
 
-	StartDecompressionPool(jobs, reader, numWorkers)
-
-	return nil
+	return StartDecompressionPool(jobs, reader, numWorkers)
 }
 
 func (reader *ArchiveReader) extractCompressed(entry FileEntry, dst *os.File) (err error) {

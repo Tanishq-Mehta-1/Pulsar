@@ -42,7 +42,7 @@ func test_writer() {
 		log.Fatalf("Archive error: %s", err)
 	}
 
-	reader.ExtractAllConcurrent(2)
+	reader.ExtractAllConcurrent("extract", 2)
 
 	if err = reader.Close(); err != nil {
 		log.Fatalf("Archive::%s", err)
