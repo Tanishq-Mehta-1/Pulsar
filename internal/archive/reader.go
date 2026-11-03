@@ -244,6 +244,8 @@ func (reader *ArchiveReader) ExtractAllConcurrent(numWorkers int) error {
 
 	jobs := make([]JobDecompress, 0, len(reader.Files))
 
+	fmt.Println("Files in archive:", len(reader.Files))
+
 	for _, entry := range reader.Files {
 		jobs = append(jobs, JobDecompress{Entry: entry})
 	}

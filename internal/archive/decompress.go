@@ -7,6 +7,7 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 type JobDecompress struct {
@@ -18,7 +19,11 @@ func DecompressFile(entry *FileEntry, section *io.SectionReader) (err error) {
 		return fmt.Errorf("DECOMPRESS::filename is too long for file: %s", entry.Filename)
 	}
 
-	//writing to local dir with same name
+	dir := filepath.Dir(entry.Filename)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
 	dst, err := os.Create(entry.Filename)
 	if err != nil {
 		return err

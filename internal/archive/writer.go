@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,8 +30,9 @@ type ArchiveWriter struct {
 }
 
 type FileStruct struct {
-	Path   string
-	Method CompressionMethod
+	Path        string
+	ArchivePath string
+	Method      CompressionMethod
 }
 
 func checkFilename(fileName string) bool {
@@ -41,7 +43,7 @@ func checkFilename(fileName string) bool {
 	return true
 }
 
-func (writer *ArchiveWriter) CreateArchive(fileName string) error {
+func (writer *ArchiveWriter) CreateArchive(fileName string, outputDir string) error {
 
 	if writer.Status != Created {
 		return fmt.Errorf("WRITER::invalid ArchiveWriter status %d", writer.Status)
@@ -56,6 +58,14 @@ func (writer *ArchiveWriter) CreateArchive(fileName string) error {
 	}
 
 	fileName += extension
+
+	if outputDir != "" {
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return err
+		}
+
+		fileName = filepath.Join(outputDir, fileName)
+	}
 
 	ok := false
 
@@ -186,7 +196,7 @@ func (writer *ArchiveWriter) AddFilesConcurrent(files []FileStruct, numWorkers i
 			return fmt.Errorf("WRITER::incorrect compression method: %d", file.Method)
 		}
 
-		jobs = append(jobs, JobCompress{Path: file.Path, CompressionMethod: file.Method})
+		jobs = append(jobs, JobCompress{Path: file.Path, ArchivePath: file.ArchivePath, CompressionMethod: file.Method})
 	}
 
 	res := StartCompressionPool(jobs, numWorkers)
@@ -198,13 +208,70 @@ func (writer *ArchiveWriter) AddFilesConcurrent(files []FileStruct, numWorkers i
 	return nil
 }
 
+func dirExists(path string) bool {
+
+	info, err := os.Stat(path)
+	if err != nil {
+
+		if errors.Is(err, os.ErrNotExist) {
+			return false
+		}
+		return false
+	}
+
+	return info.IsDir()
+}
+
+func (writer *ArchiveWriter) AddDirectory(dirPath string) error {
+
+	if !dirExists(dirPath) {
+		return fmt.Errorf("WRITER::error opening the directory")
+	}
+
+	var files []FileStruct
+
+	if err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+
+		if err != nil {
+			return fmt.Errorf("error accessing path %q: %w", path, err)
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(dirPath, path)
+		if err != nil {
+			return err
+		}
+
+		root := filepath.Base(filepath.Clean(dirPath))
+		relPath = filepath.ToSlash(filepath.Join(root, relPath))
+
+		files = append(files, FileStruct{
+			Path:        path,
+			ArchivePath: relPath,
+			Method:      Default})
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return writer.AddFilesConcurrent(files, 4)
+}
+
 func (writer *ArchiveWriter) AddFile(fileInput FileStruct) error {
 
 	if writer.Status != Active {
 		return fmt.Errorf("WRITER::invalid ArchiveWriter status %d", writer.Status)
 	}
 
-	fileName := filepath.Base(fileInput.Path)
+	fileName := fileInput.ArchivePath
+	if fileName == "" {
+		fileName = filepath.Base(fileInput.Path)
+	}
+	fileName = filepath.ToSlash(fileName)
 
 	if len(fileName) > 255 {
 		return errors.New("WRITER::filename too long")

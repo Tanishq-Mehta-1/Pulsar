@@ -12,6 +12,7 @@ import (
 
 type JobCompress struct {
 	Path              string
+	ArchivePath       string
 	CompressionMethod CompressionMethod
 }
 
@@ -43,12 +44,12 @@ func CompressFile(job JobCompress) (res ResultCompress) {
 	res.Path = job.Path
 	res.CompressionMethod = job.CompressionMethod
 
-	fileName := filepath.Base(res.Path)
-	if !checkFilename(fileName) {
-		res.Err = fmt.Errorf("COMPRESS::invalid filename [%s]", fileName)
-		return
+	fileName := job.ArchivePath
+	if fileName == "" {
+		fileName = filepath.Base(job.Path)
 	}
-	res.Filename = fileName
+
+	res.Filename = filepath.ToSlash(fileName)
 
 	file, err := os.Open(job.Path)
 	if err != nil {
