@@ -229,6 +229,7 @@ func (writer *ArchiveWriter) AddDirectory(dirPath string) error {
 	}
 
 	var files []FileStruct
+	var directories []FileEntry
 
 	if err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
 
@@ -236,17 +237,23 @@ func (writer *ArchiveWriter) AddDirectory(dirPath string) error {
 			return fmt.Errorf("error accessing path %q: %w", path, err)
 		}
 
-		if d.IsDir() {
-			return nil
-		}
-
 		relPath, err := filepath.Rel(dirPath, path)
 		if err != nil {
+
 			return err
 		}
 
 		root := filepath.Base(filepath.Clean(dirPath))
 		relPath = filepath.ToSlash(filepath.Join(root, relPath))
+
+		if d.IsDir() {
+
+			directories = append(directories, FileEntry{
+				Filename:       relPath + "/",
+				FilenameLength: uint8(len(relPath + "/")),
+				Type:           Directory})
+			return nil
+		}
 
 		files = append(files, FileStruct{
 			Path:        path,
@@ -254,11 +261,17 @@ func (writer *ArchiveWriter) AddDirectory(dirPath string) error {
 			Method:      Default})
 
 		return nil
+
 	}); err != nil {
 		return err
 	}
 
-	return writer.AddFilesConcurrent(files, 4)
+	if err := writer.AddFilesConcurrent(files, 4); err != nil {
+		return err
+	}
+
+	writer.Files = append(writer.Files, directories...)
+	return nil
 }
 
 func (writer *ArchiveWriter) AddFile(fileInput FileStruct) error {

@@ -114,20 +114,35 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 			reader.Files = nil
 			return err
 		}
+		switch fileEntry.Type {
 
-		end := fileEntry.DataOffset + fileEntry.CompressedSize
-		if fileEntry.DataOffset < uint64(HeaderSize) || end < fileEntry.DataOffset || end > archiveFooter.DirectoryOffset {
-			return fmt.Errorf("READER::incorect file entry data offset")
+		case Directory:
+			// Directory entries don't reference file data.
+			if fileEntry.DataOffset != 0 ||
+				fileEntry.CompressedSize != 0 ||
+				fileEntry.OriginalSize != 0 {
+				return fmt.Errorf("READER::invalid directory entry")
+			}
 
-		}
-		if fileEntry.CompressionMethod == None && fileEntry.OriginalSize != fileEntry.CompressedSize {
-			return fmt.Errorf("READER::incorrect compression for Method: NONE")
-		}
+		case File:
+			end := fileEntry.DataOffset + fileEntry.CompressedSize
 
-		switch fileEntry.CompressionMethod {
-		case None, BestCompression, BestSpeed, HuffmanOnly, Default:
-		default:
-			return fmt.Errorf("READER::incorrect compression method")
+			if fileEntry.DataOffset < uint64(HeaderSize) ||
+				end < fileEntry.DataOffset ||
+				end > archiveFooter.DirectoryOffset {
+				return fmt.Errorf("READER::incorrect file entry data offset")
+			}
+
+			if fileEntry.CompressionMethod == None &&
+				fileEntry.OriginalSize != fileEntry.CompressedSize {
+				return fmt.Errorf("READER::incorrect compression for Method: NONE")
+			}
+
+			switch fileEntry.CompressionMethod {
+			case None, BestCompression, BestSpeed, HuffmanOnly, Default:
+			default:
+				return fmt.Errorf("READER::incorrect compression method")
+			}
 		}
 
 		reader.Files = append(reader.Files, *fileEntry)

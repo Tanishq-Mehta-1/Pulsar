@@ -6,6 +6,12 @@ import (
 )
 
 type CompressionMethod int8
+type EntryType uint8
+
+const (
+	File EntryType = iota
+	Directory
+)
 
 const (
 	Default         CompressionMethod = -1
@@ -15,7 +21,7 @@ const (
 	HuffmanOnly     CompressionMethod = -2
 )
 
-const FileEntryLength int = 30
+const FileEntryLength int = 31
 
 // FileEntryLength + variable bytes
 type FileEntry struct {
@@ -26,6 +32,7 @@ type FileEntry struct {
 	CompressedSize    uint64            //8 bytes
 	CompressionMethod CompressionMethod //1 bytes
 	Checksum          uint32            //4 bytes
+	Type              EntryType         //1 byte
 }
 
 func SerializeFileEntry(entry *FileEntry) ([]byte, error) {
@@ -52,7 +59,8 @@ func SerializeFileEntry(entry *FileEntry) ([]byte, error) {
 	binary.BigEndian.PutUint64(buffer[9+filenameLen:17+filenameLen], entry.OriginalSize)
 	binary.BigEndian.PutUint64(buffer[17+filenameLen:25+filenameLen], entry.CompressedSize)
 	copy(buffer[25+filenameLen:26+filenameLen], []byte{(byte(entry.CompressionMethod))})
-	binary.BigEndian.PutUint32(buffer[26+filenameLen:], entry.Checksum)
+	binary.BigEndian.PutUint32(buffer[26+filenameLen:30+filenameLen], entry.Checksum)
+	copy(buffer[30+filenameLen:31+filenameLen], []byte{(byte(entry.Type))})
 
 	return buffer, nil
 }
@@ -79,13 +87,21 @@ func DeserializeFileEntry(data []byte) (*FileEntry, int, error) {
 	originalSize := binary.BigEndian.Uint64(data[9+filenameLen : 17+filenameLen])
 	compressedSize := binary.BigEndian.Uint64(data[17+filenameLen : 25+filenameLen])
 	compressionMethod := CompressionMethod(data[25+filenameLen : 26+filenameLen][0])
-	checksum := binary.BigEndian.Uint32(data[26+filenameLen : FileEntryLength+int(filenameLen)])
+	checksum := binary.BigEndian.Uint32(data[26+filenameLen : 30+filenameLen])
+	entryType := EntryType(data[30+filenameLen : FileEntryLength+int(filenameLen)][0])
 
 	//validate compressionMethod
 	switch compressionMethod {
 	case None, Default, HuffmanOnly, BestSpeed, BestCompression:
 	default:
 		return nil, 0, errors.New("FILE_ENTRY::invalid compression method")
+	}
+
+	//validate type
+	switch entryType {
+	case Directory, File:
+	default:
+		return nil, 0, errors.New("FILE_ENTRY::invalid entry type")
 	}
 
 	return &FileEntry{
@@ -96,5 +112,6 @@ func DeserializeFileEntry(data []byte) (*FileEntry, int, error) {
 		CompressedSize:    compressedSize,
 		CompressionMethod: compressionMethod,
 		Checksum:          checksum,
+		Type:              entryType,
 	}, FileEntryLength + int(filenameLen), nil
 }

@@ -174,6 +174,15 @@ func DecompressionWorker(
 	defer wg.Done()
 
 	for job := range jobs {
+
+		if job.Entry.Type == Directory {
+			if err := os.MkdirAll(job.Entry.Filename, 0755); err != nil {
+				fmt.Println("Decompression error:", err)
+				errors <- err
+			}
+			continue
+		}
+
 		entry := job.Entry
 		section := io.NewSectionReader(
 			archive,
