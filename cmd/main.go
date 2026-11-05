@@ -62,22 +62,32 @@ func test_goroutines() {
 	os.Remove(res.TempPath)
 }
 
-func handle_invalid() {
-	fmt.Println("Invalid use of command")
+// func handle_invalid() {
+// 	fmt.Println("Invalid use of command")
 
-}
+// }
 
 func main() {
 	// programName := os.Args[0]
 
 	if len(os.Args) < 2 {
-		handle_invalid()
+		handle_invalid("")
 		return
 	}
 
 	arguments := os.Args[1:]
+
+	if arguments[0] == "help" {
+		command := ""
+		if len(arguments) > 1 {
+			command = arguments[1]
+		}
+		handle_invalid(command)
+		return
+	}
+
 	if len(arguments) < 2 {
-		handle_invalid()
+		handle_invalid("")
 		return
 	}
 
@@ -110,7 +120,7 @@ func main() {
 					}
 					i++
 				} else {
-					handle_invalid()
+					handle_invalid(arguments[0])
 					return
 				}
 			}
@@ -119,8 +129,11 @@ func main() {
 		if err := extract(archivePath, outputDir, numWorkers); err != nil {
 			log.Fatal(fmt.Errorf("PLSR::EXTRACT::%w", err))
 		}
+
+	case "create":
+
 	default:
-		handle_invalid()
+		handle_invalid(arguments[0])
 	}
 
 	// test_writer()
