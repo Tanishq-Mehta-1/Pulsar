@@ -5,15 +5,22 @@ import "fmt"
 var commandDocs = map[string]string{
 	"create": `
 Usage:
-  plsr create <archive> <input...> [--workers N]
+  plsr create <archive> <input...> [-o <directory>] [--workers N]
 
 Description:
-  Create a new archive from files and directories.
+  Create a new lossless archive from files and directories.
+  Supports multiple input files and directories, preserving directory structure.
+
+Options:
+  -o          Directory in which to create the archive (default: current directory)
+  --workers   Number of compression workers (default: 8)
 
 Examples:
   plsr create backup.fz ./project
   plsr create backup.fz file1.txt file2.txt
+  plsr create backup.fz ./project ./notes.txt
   plsr create backup.fz ./project --workers 8
+  plsr create backup.fz ./project -o ./archives
 `,
 
 	"extract": `
@@ -21,10 +28,11 @@ Usage:
   plsr extract <archive> [-o <directory>] [--workers N]
 
 Description:
-  Extract an archive.
+  Extract files and directories from an archive.
+  Preserves nested directory structures and empty directories.
 
 Options:
-  -o          Output directory (default: current directory)
+  -o          Extraction destination (default: current directory)
   --workers   Number of decompression workers (default: 8)
 
 Examples:
@@ -38,7 +46,8 @@ Usage:
   plsr list <archive>
 
 Description:
-  Display the contents of an archive.
+  Display the contents of an archive in a hierarchical tree structure.
+  Shows files, nested directories, and empty directories.
 
 Example:
   plsr list backup.fz

@@ -222,10 +222,14 @@ func dirExists(path string) bool {
 	return info.IsDir()
 }
 
-func (writer *ArchiveWriter) AddDirectory(dirPath string) error {
+func (writer *ArchiveWriter) AddDirectory(dirPath string, numWorkers int) error {
 
 	if !dirExists(dirPath) {
 		return fmt.Errorf("WRITER::error opening the directory")
+	}
+
+	if numWorkers <= 0 {
+		return fmt.Errorf("WRITER::numWorkers must be positive")
 	}
 
 	var files []FileStruct
@@ -234,7 +238,7 @@ func (writer *ArchiveWriter) AddDirectory(dirPath string) error {
 	if err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
 
 		if err != nil {
-			return fmt.Errorf("error accessing path %q: %w", path, err)
+			return fmt.Errorf("WRITER::error accessing path %q: %w", path, err)
 		}
 
 		relPath, err := filepath.Rel(dirPath, path)
@@ -266,7 +270,7 @@ func (writer *ArchiveWriter) AddDirectory(dirPath string) error {
 		return err
 	}
 
-	if err := writer.AddFilesConcurrent(files, 4); err != nil {
+	if err := writer.AddFilesConcurrent(files, numWorkers); err != nil {
 		return err
 	}
 

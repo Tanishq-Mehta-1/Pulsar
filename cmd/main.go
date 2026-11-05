@@ -29,7 +29,7 @@ func test_writer() {
 	// log.Fatalf("WRITER::%s", err)
 	// }
 
-	if err := writer.AddDirectory("/home/deo3d2y/Desktop/Dev/Pulsar/testdata"); err != nil {
+	if err := writer.AddDirectory("/home/deo3d2y/Desktop/Dev/Pulsar/testdata", 4); err != nil {
 		log.Fatal(err)
 	}
 
@@ -62,11 +62,6 @@ func test_goroutines() {
 	os.Remove(res.TempPath)
 }
 
-// func handle_invalid() {
-// 	fmt.Println("Invalid use of command")
-
-// }
-
 func main() {
 	// programName := os.Args[0]
 
@@ -92,6 +87,7 @@ func main() {
 	}
 
 	switch arguments[0] {
+
 	case "list":
 		archivePath := arguments[1]
 		if err := list(archivePath); err != nil {
@@ -127,10 +123,53 @@ func main() {
 		}
 
 		if err := extract(archivePath, outputDir, numWorkers); err != nil {
-			log.Fatal(fmt.Errorf("PLSR::EXTRACT::%w", err))
+			log.Fatal(fmt.Errorf("PLSR::%w", err))
 		}
 
 	case "create":
+		if len(arguments) <= 2 {
+			handle_invalid(arguments[0])
+			return
+		}
+		archivePath := arguments[1]
+
+		var dirs, files []string
+		numWorkers := -1
+		outputDir := ""
+		takingFiles := true
+
+		for i, n := 2, len(arguments); i < n; i++ {
+			arg := arguments[i]
+
+			if arg == "--workers" && i+1 < n {
+				takingFiles = false
+				var err error
+				numWorkers, err = strconv.Atoi(arguments[i+1])
+				if err != nil {
+					log.Fatal(fmt.Errorf("PLSR::CREATE::%w", err))
+				}
+				i++
+			} else if arg == "-o" && i+1 < n {
+				takingFiles = false
+				outputDir = arguments[i+1]
+				i++
+
+			} else {
+				if !takingFiles {
+					handle_invalid(arguments[0])
+					return
+				}
+
+				var err error
+				if files, dirs, err = processArg(arg, files, dirs); err != nil {
+					log.Fatal(fmt.Errorf("PLSR::CREATE::%w", err))
+				}
+			}
+		}
+
+		if err := create(archivePath, files, dirs, outputDir, numWorkers); err != nil {
+			log.Fatal(fmt.Errorf("PLSR::%w", err))
+		}
 
 	default:
 		handle_invalid(arguments[0])
