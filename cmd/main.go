@@ -35,7 +35,9 @@ func test_writer() {
 	if err := writer.Close(); err != nil {
 		log.Fatalf("WRITER::%s", err)
 	}
+}
 
+func test_reader() {
 	reader := archive.ArchiveReader{}
 	err := reader.OpenArchive("output/archive.fz")
 	if err != nil {
@@ -59,6 +61,38 @@ func test_goroutines() {
 	os.Remove(res.TempPath)
 }
 
+func handle_invalid() {
+	fmt.Println("Invalid use of command")
+
+}
+
 func main() {
-	test_writer()
+	// programName := os.Args[0]
+
+	if len(os.Args) < 2 {
+		handle_invalid()
+		return
+	}
+
+	arguments := os.Args[1:]
+	if len(arguments) < 2 {
+		handle_invalid()
+		return
+	}
+
+	switch arguments[0] {
+	case "list":
+		archivePath := arguments[1]
+		if err := list(archivePath); err != nil {
+			log.Fatal(fmt.Errorf("PLSR::%w", err))
+		}
+
+	case "test":
+
+	default:
+		handle_invalid()
+	}
+
+	// test_writer()
+	// test_reader()
 }
