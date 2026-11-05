@@ -264,7 +264,7 @@ func (reader *ArchiveReader) ExtractAllConcurrent(outputDir string, numWorkers i
 
 	jobs := make([]JobDecompress, 0, len(reader.Files))
 
-	fmt.Println("Files in archive:", len(reader.Files))
+	// fmt.Println("Files in archive:", len(reader.Files))
 
 	for _, entry := range reader.Files {
 		newEntry := entry

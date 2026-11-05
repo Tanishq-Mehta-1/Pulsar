@@ -189,7 +189,7 @@ func DecompressionWorker(
 			int64(entry.DataOffset),
 			int64(entry.CompressedSize))
 
-		fmt.Println("Decompressing:", job.Entry.Filename)
+		// fmt.Println("Decompressing:", job.Entry.Filename)
 
 		if err := DecompressFile(&entry, section); err != nil {
 			fmt.Println("Decompression error:", err)

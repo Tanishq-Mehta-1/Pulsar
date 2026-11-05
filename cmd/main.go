@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"pulsar/internal/archive"
+	"strconv"
 )
 
 func test_writer() {
@@ -84,11 +85,40 @@ func main() {
 	case "list":
 		archivePath := arguments[1]
 		if err := list(archivePath); err != nil {
-			log.Fatal(fmt.Errorf("PLSR::%w", err))
+			log.Fatal(fmt.Errorf("PLSR::LIST::%w", err))
 		}
 
-	case "test":
+	case "extract":
+		archivePath := arguments[1]
 
+		outputDir := ""
+		numWorkers := -1
+
+		if len(arguments) > 2 {
+
+			for i, n := 2, len(arguments); i < n; i++ {
+				arg := arguments[i]
+
+				if arg == "-o" && i+1 < n {
+					outputDir = arguments[i+1]
+					i++
+				} else if arg == "--workers" && i+1 < n {
+					var err error
+					numWorkers, err = strconv.Atoi(arguments[i+1])
+					if err != nil {
+						log.Fatal(fmt.Errorf("PLSR::EXTRACT::%w", err))
+					}
+					i++
+				} else {
+					handle_invalid()
+					return
+				}
+			}
+		}
+
+		if err := extract(archivePath, outputDir, numWorkers); err != nil {
+			log.Fatal(fmt.Errorf("PLSR::EXTRACT::%w", err))
+		}
 	default:
 		handle_invalid()
 	}
