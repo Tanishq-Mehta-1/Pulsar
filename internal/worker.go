@@ -24,33 +24,35 @@ func CompressionWorker(
 
 func StartCompressionPool(
 	jobsList []JobCompress,
-	workerCount int) <-chan ResultCompress {
+	workerCount int,
+) <-chan ResultCompress {
 
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
 
-	queueCapacity := 5 //arbitrary rn
-	jobs := make(chan JobCompress, queueCapacity)
-	res := make(chan ResultCompress, queueCapacity)
+	jobs := make(chan JobCompress, 5)
+	results := make(chan ResultCompress, 5)
 
 	for range workerCount {
 		wg.Add(1)
-		go CompressionWorker(jobs, res, &wg)
+		go CompressionWorker(jobs, results, &wg)
 	}
 
-	for _, job := range jobsList {
-		jobs <- job
-	}
-
-	close(jobs)
-
-	// goroutine that closes results,
-	// ultimately closing the archive writer
+	// Feed jobs asynchronously.
 	go func() {
-		wg.Wait()
-		close(res)
+		defer close(jobs)
+
+		for _, job := range jobsList {
+			jobs <- job
+		}
 	}()
 
-	return res
+	// Close results after all workers finish.
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	return results
 }
 
 func appendResult(

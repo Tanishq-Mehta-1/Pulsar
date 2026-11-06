@@ -2,26 +2,24 @@
 
 **A custom lossless file archiver written in Go.**
 
-Pulsar is a command-line archiving utility built around a custom binary archive format. It supports DEFLATE compression, concurrent file processing, directory archiving, and parallel extraction.
-
-The project explores low-level file I/O, binary serialization, compression pipelines, concurrency, and filesystem operations in Go.
+Pulsar is a command-line archiving utility built around a custom binary archive format, featuring concurrent compression, parallel extraction, directory support, and integrity verification.
 
 ## Features
 
-- **Custom Archive Format** — Headers, file metadata, central directory, and footer.
-- **Lossless Compression** — DEFLATE compression with configurable compression levels.
-- **Concurrent Processing** — Worker-pool-based parallel compression and decompression.
-- **Directory Support** — Nested directories, files, and empty directories.
-- **Integrity Checking** — CRC32 checksums for detecting corrupted file contents.
-- **Archive Listing** — Hierarchical tree representation of archive contents.
-- **Standalone CLI** — Lightweight command-line interface.
+- Custom binary archive format with a central directory.
+- DEFLATE compression with configurable levels.
+- Concurrent compression and parallel extraction.
+- Nested directories and empty directory support.
+- CRC32 integrity verification.
+- Archive listing and metadata inspection.
+- Benchmarking against established compression tools.
 
 ## Installation
 
 ```bash
 git clone https://github.com/Tanishq-Mehta-1/pulsar.git
 cd pulsar
-go build -o plsr ./cmd/pulsar
+go build -o plsr .
 ```
 
 Optionally, install system-wide:
@@ -32,125 +30,83 @@ sudo install plsr /usr/local/bin/plsr
 
 ## Usage
 
-### Create an archive
-
 ```bash
+# Create an archive
 plsr create backup.fz ./project
-```
 
-Multiple inputs:
+# Multiple inputs and worker configuration
+plsr create backup.fz ./project ./notes.txt --workers 8
 
-```bash
-plsr create backup.fz ./project ./notes.txt ./image.png
-```
-
-Specify compression workers:
-
-```bash
-plsr create backup.fz ./project --workers 8
-```
-
-Specify output directory:
-
-```bash
+# Specify output directory
 plsr create backup.fz ./project -o ./archives
-```
 
-### Extract an archive
+# Extract
+plsr extract backup.fz -o ./output --workers 8
 
-```bash
-plsr extract backup.fz
-```
-
-Extract to a specific directory:
-
-```bash
-plsr extract backup.fz -o ./output
-```
-
-Specify decompression workers:
-
-```bash
-plsr extract backup.fz --workers 8
-```
-
-### List archive contents
-
-```bash
+# List contents
 plsr list backup.fz
+
+# Display archive metadata
+plsr info backup.fz
 ```
 
-Example output:
+## Benchmarks
 
-```text
-project/
-├── src/
-│   ├── main.go
-│   └── utils.go
-├── assets/
-│   └── logo.png
-├── config.json
-└── README.md
+Tested on a **5.33 GB dataset**, with median results over 3 runs.
+
+| Implementation | Workers | Archive (MB) | Compress (s) | Extract (s) |
+|---|---:|---:|---:|---:|
+| Pulsar | 1 | 3352.25 | 92.44 | 35.47 |
+| Pulsar | 2 | 3352.25 | 53.71 | 22.13 |
+| Pulsar | 4 | 3352.25 | 38.94 | 22.07 |
+| Pulsar | 8 | 3352.25 | 36.44 | 19.29 |
+| Pulsar | 16 | 3352.25 | 36.19 | 17.30 |
+| Pulsar | 64 | 3352.25 | 37.44 | 16.97 |
+| System ZIP | 1 | 3244.12 | 202.41 | 38.11 |
+| 7z Deflate | 1 | 3142.56 | 230.18 | 33.12 |
+| 7z LZMA2 | 1 | 2045.27 | 575.79 | 11.88 |
+| tar + pigz | Auto | 3246.94 | 36.36 | 31.91 |
+| tar + zstd | Auto | 3186.82 | 10.30 | 11.43 |
+
+Go ZIP was also tested as an additional baseline.
+
+*Results depend on compression settings, threading, and hardware. These implementations do not all use equivalent configurations.*
+
+### Running benchmarks
+
+Requires `zip`, `7z`, `tar`, `pigz`, and `zstd` for the full comparison. Missing tools are skipped.
+
+```bash
+go build -o plsr .
+
+mkdir -p ~/benchmark-tmp
+
+TMPDIR="$HOME/benchmark-tmp" go run ./benchmarks \
+    -plsr ./plsr \
+    -input ./testdata \
+    -runs 3
 ```
 
 ## Archive Format
 
-Pulsar uses a custom binary archive layout:
-
 ```text
-┌──────────────────────┐
-│        Header        │
-├──────────────────────┤
-│                      │
-│      File Data       │
-│                      │
-├──────────────────────┤
-│    Central Directory │
-├──────────────────────┤
-│        Footer        │
-└──────────────────────┘
+[ Header ][ File Data ][ Central Directory ][ Footer ]
 ```
 
-- **Header:** Identifies the archive and stores format metadata.
-- **File Data:** Contains compressed file payloads.
-- **Central Directory:** Stores filenames, offsets, sizes, compression methods, and checksums.
-- **Footer:** Contains information required to locate and parse the central directory.
+The central directory stores filenames, offsets, sizes, compression methods, and checksums, allowing archive metadata to be located without scanning file payloads.
 
-The central directory allows the reader to locate archive metadata without scanning every file payload.
+## Development Roadmap
 
-## Technical Details
+- Profile and optimize compression and I/O performance.
+- Add Zstandard support.
+- Implement chunk-based parallel compression for large files.
+- Improve memory efficiency and extraction safety.
+- Package for Arch Linux (AUR) and add desktop file-manager integration.
 
-| Component | Implementation |
-|---|---|
-| Language | Go |
-| Compression | `compress/flate` |
-| Integrity | CRC32 (IEEE) |
-| Concurrency | Goroutines and worker pools |
-| File I/O | `os`, `io`, `io.SectionReader` |
-| Archive format | Custom binary format |
+## Tech Stack
 
-## Project Structure
-
-```text
-pulsar/
-├── cmd/
-│   └── pulsar/
-│       ├── main.go
-│       ├── create.go
-│       ├── extract.go
-│       └── list.go
-├── internal/
-│   └── archive/
-│       ├── writer.go
-│       ├── reader.go
-│       ├── format.go
-│       ├── compress.go
-│       ├── decompress.go
-│       └── worker.go
-├── go.mod
-└── README.md
-```
+Go · DEFLATE · Goroutines · Worker Pools · CRC32 · Binary Serialization
 
 ## License
 
-Pulsar is licensed under the [MIT License](LICENSE).
+[MIT License](LICENSE)ye 

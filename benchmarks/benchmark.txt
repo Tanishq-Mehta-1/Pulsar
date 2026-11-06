@@ -1,0 +1,18 @@
+[deo3d2y@DEOs Pulsar]$ TMPDIR="$HOME/benchmark-tmp" go run ./benchmarks     -plsr ./plsr     -input ./testdata     -runs 3
+Dataset: /home/deo3d2y/Desktop/Dev/Pulsar/testdata
+Original size: 5330.19 MB
+Runs: 3
+
+Format          Workers  Archive MB   Compress s   Extract s    Ratio %      Comp MB/s    Extract MB/s
+Pulsar-1        1        3352.25      92.44        35.47        62.89        57.66        150.28      
+Pulsar-2        2        3352.25      53.71        22.13        62.89        99.24        240.84      
+Pulsar-4        4        3352.25      38.94        22.07        62.89        136.88       241.52      
+Pulsar-8        8        3352.25      36.44        19.29        62.89        146.29       276.32      
+Pulsar-16       16       3352.25      36.19        17.30        62.89        147.30       308.12      
+Pulsar-64       64       3352.25      37.44        16.97        62.89        142.36       314.01      
+Go ZIP          1        3379.80      67.69        36.60        63.41        78.74        145.62      
+System ZIP      1        3244.12      202.41       38.11        60.86        26.33        139.87      
+7z Deflate      1        3142.56      230.18       33.12        58.96        23.16        160.95      
+7z LZMA2        1        2045.27      575.79       11.88        38.37        9.26         448.85      
+tar + pigz      0        3246.94      36.36        31.91        60.92        146.61       167.04      
+tar + zstd      0        3186.82      10.30        11.43        59.79        517.69       466.45 
