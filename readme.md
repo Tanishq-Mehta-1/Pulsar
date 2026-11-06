@@ -109,4 +109,4 @@ Go · DEFLATE · Goroutines · Worker Pools · CRC32 · Binary Serialization
 
 ## License
 
-[MIT License](LICENSE)ye 
+[MIT License](LICENSE)
