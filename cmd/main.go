@@ -171,6 +171,20 @@ func main() {
 			log.Fatal(fmt.Errorf("PLSR::%w", err))
 		}
 
+	case "info":
+
+		if len(arguments) != 2 {
+			handle_invalid("info")
+			return
+		}
+
+		info, err := getArchiveInfo(arguments[1])
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		printArchiveInfo(info)
+
 	default:
 		handle_invalid(arguments[0])
 	}

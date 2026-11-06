@@ -51,6 +51,17 @@ Description:
 
 Example:
   plsr list backup.fz
+`, "info": `
+Usage:
+  plsr info <archive>
+
+Description:
+  Display metadata and statistics about an archive.
+  Shows archive size, original size, compressed size,
+  compression ratio, entry counts, and compression methods.
+
+Example:
+  plsr info backup.fz
 `,
 }
 
