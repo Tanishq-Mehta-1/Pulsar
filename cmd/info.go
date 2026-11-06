@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"pulsar/internal/archive"
+	archive "pulsar/internal"
 )
 
 type ArchiveInfo struct {

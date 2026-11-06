@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"pulsar/internal/archive"
+	archive "pulsar/internal"
 	"strconv"
 )
 

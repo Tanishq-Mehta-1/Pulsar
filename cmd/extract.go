@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"pulsar/internal/archive"
+	archive "pulsar/internal"
 )
 
 func extract(path string, dst string, numWorkers int) error {

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"pulsar/internal/archive"
+	archive "pulsar/internal"
 )
 
 func processArg(

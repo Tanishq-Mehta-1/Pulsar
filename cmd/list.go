@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
-	"pulsar/internal/archive"
+	archive "pulsar/internal"
 	"slices"
 	"strings"
 )
