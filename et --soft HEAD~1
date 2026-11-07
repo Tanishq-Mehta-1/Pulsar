@@ -1,0 +1,229 @@
+[33mcommit 8a775522e43ebb2698c1458306e069da5bb5ab9c[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mchunking[m[33m)[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Sun Nov 8 01:30:37 2026 +0530
+
+    minor change: change extension to .psr
+
+[33mcommit cde8b60d692cafb5b48eb9853a1b61d17b7e61ca[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Sun Nov 8 01:25:52 2026 +0530
+
+    add FhunkEntry and FileEntryChunk
+    
+    add FooterV2
+
+[33mcommit 1f8b36d058a035e92ce2df5b98e980c07092f418[m[33m ([m[1;32mmain[m[33m)[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Sat Nov 7 15:28:49 2026 +0530
+
+    add code for profiling
+
+[33mcommit e827d1332d3c21b493844d87c7dbf8c8083eaea9[m[33m ([m[1;31morigin/main[m[33m)[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Sat Nov 7 02:43:20 2026 +0530
+
+    add GO ZIP | System ZIP | 7z (Deflate | LZMA2) | pigz | zstd in benchmark
+    
+    update readme.md
+
+[33mcommit 32e4fe22467fde9ecae363a7730a4fd5f0c52815[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Fri Nov 6 23:54:47 2026 +0530
+
+    structure change
+    
+    add benchmark
+
+[33mcommit 716b461b137e843baa9e18f4108920ff3a478d39[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Fri Nov 6 23:12:43 2026 +0530
+
+    add info command
+
+[33mcommit 052e9fd88e1530d177bf3cb637eb4a2a3f638d6a[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Thu Nov 5 17:14:09 2026 +0530
+
+    add readme.md and License
+
+[33mcommit 4636408d87ce5af9849d63ec9c8f965e3b17075b[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Thu Nov 5 17:04:23 2026 +0530
+
+    add create command to cli
+
+[33mcommit 1b6e3297b017af296111acc631a85703ca2e2228[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Thu Nov 5 15:59:17 2026 +0530
+
+    add basic documentation and help command
+
+[33mcommit 343043f2d319dc8a579171f1ccb375d9c6203f51[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Thu Nov 5 15:50:31 2026 +0530
+
+    add extract command to cli
+
+[33mcommit 6cb7750032af59d2be348e1c79bf4d5ab5597540[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Thu Nov 5 14:59:20 2026 +0530
+
+    start adding cmd support
+    
+    add list command to parse and list archive structure
+
+[33mcommit 9e9f031d03f7e770b9c1fc5484be3488c0ad964a[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Thu Nov 5 13:36:34 2026 +0530
+
+    add type to FileEntry, to preserve empty directories
+
+[33mcommit 6fce776f3f791f9b999166fec68e7808841df12d[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Tue Nov 3 23:05:31 2026 +0530
+
+    add support to extract to a destination (in local dir)
+
+[33mcommit 8d73dedf51630afb707e7367935742736a85de92[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Tue Nov 3 22:20:34 2026 +0530
+
+    remove all tests
+
+[33mcommit 942832f11212be762dcbeb8c9cd0d9091b54b4a4[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Tue Nov 3 20:53:02 2026 +0530
+
+    add function to add directories, preserving structure
+
+[33mcommit 607b0efe85bcc92d3f07aaf916d7771629239595[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Tue Nov 3 00:51:17 2026 +0530
+
+    integrate concurrency into reader
+
+[33mcommit eb212a1a179e037054cd76d3ad038341607a0cc2[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Tue Nov 3 00:12:38 2026 +0530
+
+    integrate concurrency into existing writer
+    
+    changed input parameters of AddFile method(s)
+
+[33mcommit 98b5170d345db7b793b9c5e427519ad3e99a4eb2[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Mon Nov 2 00:51:04 2026 +0530
+
+    minor changes
+
+[33mcommit ce3a1ac300e806a78264bed8ef71e95a71b99ef9[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Mon Nov 2 00:02:30 2026 +0530
+
+    complete multithreaded file compression
+
+[33mcommit 7d5fd89a537cf5c7fdce313be15e2f00d0caca26[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Sun Nov 1 23:18:31 2026 +0530
+
+    add func for compressing files for worker routines
+
+[33mcommit 4fc429119c0a326b0620b0d525b279fb196c6297[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Sun Nov 1 19:39:11 2026 +0530
+
+    tested a bit with concurrency
+
+[33mcommit 12b9e3f88cb66ff8539f59c3b774496f7f936d24[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Fri Oct 30 23:42:36 2026 +0530
+
+    update tests
+
+[33mcommit 7d073fe6694a74c6e153d8d584420aa887925218[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Fri Oct 30 23:15:28 2026 +0530
+
+    add decompression support to ArchiveReader
+
+[33mcommit 5253b5ec4c3436a00f9969ec21b8a1fbb62cf2c0[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Fri Oct 30 19:58:35 2026 +0530
+
+    add compression support (using flate/go) to ArchvieWriter
+
+[33mcommit 561432fab2bd957ae58e44d5f4ebde822aafc6f0[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Fri Oct 30 01:26:04 2026 +0530
+
+    add test data
+    
+    fix code to pass tests
+
+[33mcommit 65b59b408a503e73a547dee9ea32bf62125f8601[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Fri Oct 30 01:05:08 2026 +0530
+
+    add tests for all
+
+[33mcommit e0865c26e391b4ae4989774931c4c656f01ba647[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Fri Oct 30 00:52:04 2026 +0530
+
+    tested compression and decompression of archive file
+    
+    made errors more descriptive
+
+[33mcommit 58ce9eb539f8752e190b10f6b7193664900ed19d[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Fri Oct 30 00:04:32 2026 +0530
+
+    add function to extract files to reader
+
+[33mcommit 06d604cd8288fc8c363cefdc1a2e10ac6657b83a[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Thu Oct 29 15:30:33 2026 +0530
+
+    add function to open an archive
+
+[33mcommit 90d2d42397fd57dad836ec17cd488b08516bb878[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Thu Oct 29 00:50:31 2026 +0530
+
+    polish the logic of writer
+    
+    minor quality changes to other files
+
+[33mcommit 27bd597b6b846ef5c8439027a164aefe8b99dc9a[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Wed Oct 28 23:24:43 2026 +0530
+
+    add footer
+    
+    add archive writer (incomplete)
+    
+    modify allowed fileName length to 255 in FileEntry
+
+[33mcommit 5f3fd364b5a331214d2fb0e8d8daed4ed541b97e[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Wed Oct 28 01:38:34 2026 +0530
+
+    add tests for format.go
+
+[33mcommit 34187a6f43a91ae8d409c8918ac88adfa3699e10[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Wed Oct 28 01:35:03 2026 +0530
+
+    add file-metadata struct for archive
+
+[33mcommit ed68b76faf48f705f1766d7e4c075692677b086e[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Wed Oct 28 00:10:16 2026 +0530
+
+    add header tests
+
+[33mcommit e569f1f96163afcb405fbe163a009ae81272c65d[m
+Author: Tanishq-Mehta-1 <tanishq8mehta20@gmail.com>
+Date:   Wed Oct 28 00:05:32 2026 +0530
+
+    first commit

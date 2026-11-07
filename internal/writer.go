@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-var extension string = ".fz"
+var extension string = ".plsr"
 
 type ObjStatus uint8
 
