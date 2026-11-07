@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 type ArchiveWriterV2 struct {
@@ -107,21 +108,26 @@ func (writer *ArchiveWriterV2) AddFilesConcurrent(
 		return fmt.Errorf("WRITERV2::worker count must be positive")
 	}
 
-	jobs := make([]JobCompress, 0, len(files))
-	for _, file := range files {
+	res, fileEntries, errors := StartChunkPool(files, numWorkers, writer)
 
-		switch file.Method {
-		case None, BestCompression, BestSpeed, Default, HuffmanOnly:
-		default:
-			return fmt.Errorf("WRITERV2::incorrect compression method: %d", file.Method)
+	go func() {
+		var firstErr error
+		for err := range errors {
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
 		}
+	}()
 
-		jobs = append(jobs, JobCompress{Path: file.Path, ArchivePath: file.ArchivePath, CompressionMethod: file.Method})
-	}
+	// jobs := make([]JobCompress, 0, len(files))
+	// for _, file := range files {
 
-	res := StartCompressionPool(jobs, numWorkers)
+	// 	jobs = append(jobs, JobCompress{Path: file.Path, ArchivePath: file.ArchivePath, CompressionMethod: file.Method})
+	// }
 
-	if err := WriteArchive(writer, res); err != nil {
+	// res := StartCompressionPool(jobs, numWorkers)
+
+	if err := WriteArchiveV2(writer, res, fileEntries); err != nil {
 		return fmt.Errorf("WRITERV2::error writing to archive concurrently: %w", err)
 	}
 
@@ -189,7 +195,12 @@ func (writer *ArchiveWriterV2) AddDirectory(
 func (writer *ArchiveWriterV2) generateChunks(
 	files []FileStruct,
 	jobs chan<- ChunkJob,
-) ([]FileEntryChunk, error) {
+	metadata chan<- []FileEntryChunk,
+	errors chan<- error,
+	wg *sync.WaitGroup,
+) {
+
+	defer wg.Done()
 
 	var res []FileEntryChunk
 
@@ -198,19 +209,29 @@ func (writer *ArchiveWriterV2) generateChunks(
 		fileId := writer.NextFileID
 
 		if len(file.ArchivePath) > 255 {
-			return nil, fmt.Errorf("WRITERV2::archive filename too long")
+			errors <- fmt.Errorf("WRITERV2::archive filename too long")
+			continue
+		}
+
+		switch file.Method {
+		case None, BestCompression, BestSpeed, Default, HuffmanOnly:
+		default:
+			errors <- fmt.Errorf("WRITERV2::incorrect compression method: %d", file.Method)
+			continue
 		}
 
 		//open file
 		f, err := os.Open(file.Path)
 		if err != nil {
-			return nil, err
+			errors <- err
+			continue
 		}
 
 		info, err := f.Stat()
 		if err != nil {
 			f.Close()
-			return nil, err
+			errors <- err
+			continue
 		}
 		fileSize := info.Size()
 
@@ -224,10 +245,11 @@ func (writer *ArchiveWriterV2) generateChunks(
 
 				f.Close()
 				if err != nil {
-					return nil, err
+					errors <- err
 				}
 
-				return nil, fmt.Errorf("WRITERV2::wrote %d bytes to chunk instead of %d", n, bufSize)
+				errors <- fmt.Errorf("WRITERV2::wrote %d bytes to chunk instead of %d", n, bufSize)
+				continue
 			}
 
 			chunkJob := ChunkJob{
@@ -242,7 +264,8 @@ func (writer *ArchiveWriterV2) generateChunks(
 		}
 
 		if err = f.Close(); err != nil {
-			return nil, err
+			errors <- err
+			continue
 		}
 
 		fChunk := FileEntryChunk{
@@ -261,7 +284,8 @@ func (writer *ArchiveWriterV2) generateChunks(
 	//when done, close jobs
 	close(jobs)
 
-	return res, nil
+	metadata <- res
+	errors <- nil
 }
 
 func (writer *ArchiveWriterV2) Close() error {

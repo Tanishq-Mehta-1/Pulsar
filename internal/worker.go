@@ -8,52 +8,7 @@ import (
 	"sync"
 )
 
-func CompressionWorker(
-	jobs <-chan JobCompress,
-	results chan<- ResultCompress,
-	wg *sync.WaitGroup,
-) {
-
-	defer wg.Done()
-
-	for job := range jobs {
-		res := CompressFile(job)
-		results <- res
-	}
-}
-
-func StartCompressionPool(
-	jobsList []JobCompress,
-	workerCount int,
-) <-chan ResultCompress {
-
-	var wg sync.WaitGroup
-
-	jobs := make(chan JobCompress, 5)
-	results := make(chan ResultCompress, 5)
-
-	for range workerCount {
-		wg.Add(1)
-		go CompressionWorker(jobs, results, &wg)
-	}
-
-	// Feed jobs asynchronously.
-	go func() {
-		defer close(jobs)
-
-		for _, job := range jobsList {
-			jobs <- job
-		}
-	}()
-
-	// Close results after all workers finish.
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	return results
-}
+const queueCapacity int = 100 //arbitrary rn
 
 func appendResult(
 	writer *ArchiveWriterV1,
@@ -166,6 +121,53 @@ func WriteArchive(
 	return firstErr
 }
 
+func CompressionWorker(
+	jobs <-chan JobCompress,
+	results chan<- ResultCompress,
+	wg *sync.WaitGroup,
+) {
+
+	defer wg.Done()
+
+	for job := range jobs {
+		res := CompressFile(job)
+		results <- res
+	}
+}
+
+func StartCompressionPool(
+	jobsList []JobCompress,
+	workerCount int,
+) <-chan ResultCompress {
+
+	var wg sync.WaitGroup
+
+	jobs := make(chan JobCompress, queueCapacity)
+	results := make(chan ResultCompress, queueCapacity)
+
+	for range workerCount {
+		wg.Add(1)
+		go CompressionWorker(jobs, results, &wg)
+	}
+
+	// Feed jobs asynchronously.
+	go func() {
+		defer close(jobs)
+
+		for _, job := range jobsList {
+			jobs <- job
+		}
+	}()
+
+	// Close results after all workers finish.
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	return results
+}
+
 func DecompressionWorker(
 	jobs <-chan JobDecompress,
 	errors chan<- error,
@@ -207,7 +209,6 @@ func StartDecompressionPool(
 
 	wg := sync.WaitGroup{}
 
-	queueCapacity := 5 //arbitrary rn
 	jobs := make(chan JobDecompress, queueCapacity)
 	errors := make(chan error, len(jobsList))
 
@@ -235,4 +236,58 @@ func StartDecompressionPool(
 	}
 
 	return firstErr
+}
+
+func ChunkWorker(
+	jobs <-chan ChunkJob,
+	results chan<- ChunkResult,
+	errors chan<- error,
+	wg *sync.WaitGroup,
+) {
+
+	defer wg.Done()
+
+	for job := range jobs {
+		res, err := CompressChunk(job)
+		if err != nil {
+			fmt.Println("error while compressing chunk:", err)
+			errors <- err
+			continue
+		}
+
+		results <- res
+	}
+}
+
+func StartChunkPool(
+	files []FileStruct,
+	workerCount int,
+	writer *ArchiveWriterV2,
+) (<-chan ChunkResult, <-chan []FileEntryChunk, <-chan error) {
+
+	var wg sync.WaitGroup
+
+	jobs := make(chan ChunkJob, queueCapacity)
+	results := make(chan ChunkResult, queueCapacity)
+	errors := make(chan error, len(writer.Files))
+
+	fileEntryMetadata := make(chan []FileEntryChunk, 1)
+
+	//start job chunker
+	wg.Add(1)
+	go writer.generateChunks(files, jobs, fileEntryMetadata, errors, &wg)
+
+	for range workerCount {
+		wg.Add(1)
+		go ChunkWorker(jobs, results, errors, &wg)
+	}
+
+	// Close results after all workers finish.
+	go func() {
+		wg.Wait()
+		close(results)
+		close(errors)
+	}()
+
+	return results, fileEntryMetadata, errors
 }
