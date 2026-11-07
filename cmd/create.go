@@ -46,6 +46,16 @@ func create(
 		return fmt.Errorf("CREATE::%w", err)
 	}
 
+	// f, err := os.Create("compress.prof")
+	// if err != nil {
+	// 	return err
+	// }
+
+	// if err := pprof.StartCPUProfile(f); err != nil {
+	// 	f.Close()
+	// 	return err
+	// }
+
 	defer func() {
 		if err != nil {
 			writer.OutputFile.Close()
@@ -69,6 +79,15 @@ func create(
 			return fmt.Errorf("CREATE::%w", err)
 		}
 	}
+
+	// if err := writer.AddFilesConcurrent(fileEntries, numWorkers); err != nil {
+	// 	pprof.StopCPUProfile()
+	// 	f.Close()
+	// 	return fmt.Errorf("CREATE::%w", err)
+	// }
+
+	// pprof.StopCPUProfile()
+	// f.Close()
 
 	if err := writer.Close(); err != nil {
 		return err
