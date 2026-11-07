@@ -414,14 +414,14 @@ func (writer *ArchiveWriter) Close() error {
 	directorySize := uint64(outputInfo.Size()) - directoryOffset
 
 	//write the Footer to file
-	archiveFooter := Footer{
+	archiveFooter := FooterV1{
 		Signature:       fzFooterSignature,
 		DirectoryOffset: directoryOffset,
 		DirectorySize:   directorySize,
 		EntryCount:      entryCount,
 	}
 
-	buffer := SerializeFooter(&archiveFooter)
+	buffer := SerializeFooterV1(&archiveFooter)
 
 	outputInfo, err = writer.OutputFile.Stat()
 	if err != nil {

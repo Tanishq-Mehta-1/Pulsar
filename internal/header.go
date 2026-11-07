@@ -44,7 +44,7 @@ func DeserializeHeader(header_buffer [HeaderSize]byte) (*Header, error) {
 
 	//version check
 	switch version {
-	case 1:
+	case 1, 2:
 		break
 	default:
 		return nil, errors.New("HEADER::invalid archive version")

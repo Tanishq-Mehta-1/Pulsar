@@ -45,7 +45,7 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 		return err
 	}
 
-	if outputFileInfo.Size() < int64(HeaderSize+FooterSize) {
+	if outputFileInfo.Size() < int64(HeaderSize+FooterSizeV1) {
 		return fmt.Errorf("READER::selected archive is too small")
 	}
 
@@ -67,17 +67,17 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	}
 
 	//read footer
-	footerBuffer := make([]byte, FooterSize)
-	n, err = file.ReadAt(footerBuffer, outputFileInfo.Size()-int64(FooterSize))
-	if err != nil || n != FooterSize {
+	footerBuffer := make([]byte, FooterSizeV1)
+	n, err = file.ReadAt(footerBuffer, outputFileInfo.Size()-int64(FooterSizeV1))
+	if err != nil || n != FooterSizeV1 {
 		if err != nil {
 			return err
 		}
 
-		return fmt.Errorf("READER::read %d bytes instead of %d", n, FooterSize)
+		return fmt.Errorf("READER::read %d bytes instead of %d", n, FooterSizeV1)
 	}
 
-	archiveFooter, err := DeserializeFooter([24]byte(footerBuffer))
+	archiveFooter, err := DeserializeFooterV1([24]byte(footerBuffer))
 	if err != nil {
 		return err
 	}
@@ -86,12 +86,12 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	size := uint64(outputFileInfo.Size())
 	if archiveFooter.DirectoryOffset < uint64(HeaderSize) ||
 		archiveFooter.DirectoryOffset > size || archiveFooter.DirectorySize > size ||
-		archiveFooter.DirectoryOffset+archiveFooter.DirectorySize+uint64(FooterSize) != size {
+		archiveFooter.DirectoryOffset+archiveFooter.DirectorySize+uint64(FooterSizeV1) != size {
 		return fmt.Errorf("READER::footer directory offset and size don't match the archive's size")
 
 	}
 
-	// if archiveFooter.DirectoryOffset+archiveFooter.DirectorySize+uint64(FooterSize) != uint64(outputFileInfo.Size()) {
+	// if archiveFooter.DirectoryOffset+archiveFooter.DirectorySize+uint64(FooterSizeV1) != uint64(outputFileInfo.Size()) {
 	// 	return fmt.Errorf("READER::footer directory offset and size don't match the archive's size")
 	// }
 

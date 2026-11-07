@@ -43,6 +43,7 @@ func requireTools(names ...string) map[string]bool {
 	}
 	return available
 }
+
 func runPulsar(binary, archivePath, input, output string, workers int) (time.Duration, time.Duration, int64, error) {
 	_ = os.Remove(archivePath)
 	_ = os.RemoveAll(output)
