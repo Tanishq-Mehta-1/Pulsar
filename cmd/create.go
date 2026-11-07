@@ -28,6 +28,67 @@ func processArg(
 	return files, dirs, nil
 }
 
+func createV1(
+	path string,
+	files []string,
+	dirs []string,
+	outputDir string,
+	numWorkers int) (err error) {
+	writer := archive.ArchiveWriterV1{}
+	if err := writer.CreateArchive(path, outputDir); err != nil {
+		return fmt.Errorf("CREATE::%w", err)
+	}
+
+	// f, err := os.Create("compress.prof")
+	// if err != nil {
+	// 	return err
+	// }
+
+	// if err := pprof.StartCPUProfile(f); err != nil {
+	// 	f.Close()
+	// 	return err
+	// }
+
+	defer func() {
+		if err != nil {
+			writer.OutputFile.Close()
+			remErr := os.Remove(writer.OutputFile.Name())
+			err = errors.Join(err, remErr)
+		}
+	}()
+
+	fileEntries := make([]archive.FileStruct, len(files))
+
+	for i, file := range files {
+		fileEntries[i] = archive.FileStruct{Path: file, Method: archive.Default}
+	}
+
+	if err := writer.AddFilesConcurrent(fileEntries, numWorkers); err != nil {
+		return fmt.Errorf("CREATE::%w", err)
+	}
+
+	for _, dir := range dirs {
+		if err := writer.AddDirectory(dir, numWorkers); err != nil {
+			return fmt.Errorf("CREATE::%w", err)
+		}
+	}
+
+	// if err := writer.AddFilesConcurrent(fileEntries, numWorkers); err != nil {
+	// 	pprof.StopCPUProfile()
+	// 	f.Close()
+	// 	return fmt.Errorf("CREATE::%w", err)
+	// }
+
+	// pprof.StopCPUProfile()
+	// f.Close()
+
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func create(
 	path string,
 	files []string,
@@ -43,61 +104,9 @@ func create(
 	}
 
 	switch version {
-	case 1: //handle v1
-		writer := archive.ArchiveWriterV1{}
-		if err := writer.CreateArchive(path, outputDir); err != nil {
-			return fmt.Errorf("CREATE::%w", err)
-		}
-
-		// f, err := os.Create("compress.prof")
-		// if err != nil {
-		// 	return err
-		// }
-
-		// if err := pprof.StartCPUProfile(f); err != nil {
-		// 	f.Close()
-		// 	return err
-		// }
-
-		defer func() {
-			if err != nil {
-				writer.OutputFile.Close()
-				remErr := os.Remove(writer.OutputFile.Name())
-				err = errors.Join(err, remErr)
-			}
-		}()
-
-		fileEntries := make([]archive.FileStruct, len(files))
-
-		for i, file := range files {
-			fileEntries[i] = archive.FileStruct{Path: file, Method: archive.Default}
-		}
-
-		if err := writer.AddFilesConcurrent(fileEntries, numWorkers); err != nil {
-			return fmt.Errorf("CREATE::%w", err)
-		}
-
-		for _, dir := range dirs {
-			if err := writer.AddDirectory(dir, numWorkers); err != nil {
-				return fmt.Errorf("CREATE::%w", err)
-			}
-		}
-
-		// if err := writer.AddFilesConcurrent(fileEntries, numWorkers); err != nil {
-		// 	pprof.StopCPUProfile()
-		// 	f.Close()
-		// 	return fmt.Errorf("CREATE::%w", err)
-		// }
-
-		// pprof.StopCPUProfile()
-		// f.Close()
-
-		if err := writer.Close(); err != nil {
-			return err
-		}
-
-		return nil
-	case 2: //handle v1
+	case 1:
+		return createV1(path, files, dirs, outputDir, numWorkers)
+	case 2:
 	default:
 		return fmt.Errorf("CREATE::invalid writer version")
 	}

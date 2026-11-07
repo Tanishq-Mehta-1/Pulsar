@@ -17,11 +17,11 @@ type ArchiveWriterV1 struct {
 func (writer *ArchiveWriterV1) CreateArchive(fileName string, outputDir string) error {
 
 	if writer.Status != Created {
-		return fmt.Errorf("WRITER::invalid ArchiveWriterV1 status %d", writer.Status)
+		return fmt.Errorf("WRITERV1::invalid ArchiveWriterV1 status %d", writer.Status)
 	}
 
 	if !checkFilename(fileName) {
-		return errors.New("WRITER::invalid filename")
+		return errors.New("WRITERV1::invalid filename")
 	}
 
 	if fileName == "" {
@@ -73,7 +73,7 @@ func (writer *ArchiveWriterV1) CreateArchive(fileName string, outputDir string) 
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("WRITER::wrote %d bytes instead of %d. Error: %s", n, len(byte_stream), err)
+		return fmt.Errorf("WRITERV1::wrote %d bytes instead of %d. Error: %s", n, len(byte_stream), err)
 	}
 
 	writer.Status = Active
@@ -85,11 +85,11 @@ func (writer *ArchiveWriterV1) CreateArchive(fileName string, outputDir string) 
 func (writer *ArchiveWriterV1) AddFilesConcurrent(files []FileStruct, numWorkers int) error {
 
 	if writer.Status != Active {
-		return fmt.Errorf("WRITER::invalid ArchiveWriterV1 status %d", writer.Status)
+		return fmt.Errorf("WRITERV1::invalid ArchiveWriterV1 status %d", writer.Status)
 	}
 
 	if numWorkers <= 0 {
-		return fmt.Errorf("WRITER::worker count must be positive")
+		return fmt.Errorf("WRITERV1::worker count must be positive")
 	}
 
 	jobs := make([]JobCompress, 0, len(files))
@@ -98,7 +98,7 @@ func (writer *ArchiveWriterV1) AddFilesConcurrent(files []FileStruct, numWorkers
 		switch file.Method {
 		case None, BestCompression, BestSpeed, Default, HuffmanOnly:
 		default:
-			return fmt.Errorf("WRITER::incorrect compression method: %d", file.Method)
+			return fmt.Errorf("WRITERV1::incorrect compression method: %d", file.Method)
 		}
 
 		jobs = append(jobs, JobCompress{Path: file.Path, ArchivePath: file.ArchivePath, CompressionMethod: file.Method})
@@ -107,7 +107,7 @@ func (writer *ArchiveWriterV1) AddFilesConcurrent(files []FileStruct, numWorkers
 	res := StartCompressionPool(jobs, numWorkers)
 
 	if err := WriteArchive(writer, res); err != nil {
-		return fmt.Errorf("WRITER::error writing to archive concurrently: %w", err)
+		return fmt.Errorf("WRITERV1::error writing to archive concurrently: %w", err)
 	}
 
 	return nil
@@ -116,11 +116,11 @@ func (writer *ArchiveWriterV1) AddFilesConcurrent(files []FileStruct, numWorkers
 func (writer *ArchiveWriterV1) AddDirectory(dirPath string, numWorkers int) error {
 
 	if !dirExists(dirPath) {
-		return fmt.Errorf("WRITER::error opening the directory")
+		return fmt.Errorf("WRITERV1::error opening the directory")
 	}
 
 	if numWorkers <= 0 {
-		return fmt.Errorf("WRITER::numWorkers must be positive")
+		return fmt.Errorf("WRITERV1::numWorkers must be positive")
 	}
 
 	var files []FileStruct
@@ -129,7 +129,7 @@ func (writer *ArchiveWriterV1) AddDirectory(dirPath string, numWorkers int) erro
 	if err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
 
 		if err != nil {
-			return fmt.Errorf("WRITER::error accessing path %q: %w", path, err)
+			return fmt.Errorf("WRITERV1::error accessing path %q: %w", path, err)
 		}
 
 		relPath, err := filepath.Rel(dirPath, path)
@@ -172,15 +172,20 @@ func (writer *ArchiveWriterV1) AddDirectory(dirPath string, numWorkers int) erro
 func (writer *ArchiveWriterV1) Close() error {
 
 	if writer.Status != Active {
-		return fmt.Errorf("WRITER::invalid ArchiveWriterV1 status %d", writer.Status)
+		return fmt.Errorf("WRITERV1::invalid ArchiveWriterV1 status %d", writer.Status)
+	}
+
+	if len(writer.Files) > int(MAXUINT32) {
+		return fmt.Errorf("WRITERV2::file count %d exceeds limit", len(writer.Files))
 	}
 
 	outputInfo, err := writer.OutputFile.Stat()
 	if err != nil {
-		return fmt.Errorf("WRITER::error reading output file stats: %v", err)
+		return fmt.Errorf("WRITERV1::error reading output file stats: %v", err)
 	}
 
 	directoryOffset := uint64(outputInfo.Size())
+
 	entryCount := uint32(len(writer.Files))
 
 	success := false
@@ -200,13 +205,13 @@ func (writer *ArchiveWriterV1) Close() error {
 
 		n, err := writer.OutputFile.Write(buffer)
 		if err != nil || n != len(buffer) {
-			return fmt.Errorf("WRITER::wrote %d bytes instead of %d bytes. Error: %s", n, len(buffer), err)
+			return fmt.Errorf("WRITERV1::wrote %d bytes instead of %d bytes. Error: %s", n, len(buffer), err)
 		}
 	}
 
 	outputInfo, err = writer.OutputFile.Stat()
 	if err != nil {
-		return fmt.Errorf("WRITER::error reading output file stats: %v", err)
+		return fmt.Errorf("WRITERV1::error reading output file stats: %v", err)
 	}
 
 	directorySize := uint64(outputInfo.Size()) - directoryOffset
@@ -223,17 +228,17 @@ func (writer *ArchiveWriterV1) Close() error {
 
 	outputInfo, err = writer.OutputFile.Stat()
 	if err != nil {
-		return fmt.Errorf("WRITER::error reading output file stats: %v", err)
+		return fmt.Errorf("WRITERV1::error reading output file stats: %v", err)
 	}
 
 	//validate footer
 	if directoryOffset+directorySize != uint64(outputInfo.Size()) {
-		return errors.New("WRITER::invalid directory offset or size")
+		return errors.New("WRITERV1::invalid directory offset or size")
 	}
 
 	n, err := writer.OutputFile.Write(buffer[:])
 	if err != nil || n != len(buffer) {
-		return fmt.Errorf("WRITER::wrote %d bytes instead of %d. Error: %s", n, len(buffer), err)
+		return fmt.Errorf("WRITERV1::wrote %d bytes instead of %d. Error: %s", n, len(buffer), err)
 	}
 
 	if err := writer.OutputFile.Close(); err != nil {
