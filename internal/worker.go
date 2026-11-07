@@ -56,7 +56,7 @@ func StartCompressionPool(
 }
 
 func appendResult(
-	writer *ArchiveWriter,
+	writer *ArchiveWriterV1,
 	res ResultCompress,
 	dataOffset uint64,
 	tmp *os.File) (err error) {
@@ -100,7 +100,7 @@ func appendResult(
 }
 
 func WriteArchive(
-	writer *ArchiveWriter,
+	writer *ArchiveWriterV1,
 	results <-chan ResultCompress) error {
 
 	if writer.Status != Active {

@@ -91,6 +91,7 @@ func main() {
 		var dirs, files []string
 		numWorkers := -1
 		outputDir := ""
+		version := 1
 		takingFiles := true
 
 		for i, n := 2, len(arguments); i < n; i++ {
@@ -109,6 +110,14 @@ func main() {
 				outputDir = arguments[i+1]
 				i++
 
+			} else if arg == "-v" && i+1 < n {
+				takingFiles = false
+				var err error
+				version, err = strconv.Atoi(arguments[i+1])
+				if err != nil {
+					log.Fatal(fmt.Errorf("PLSR::CREATE::%w", err))
+				}
+				i++
 			} else {
 				if !takingFiles {
 					handle_invalid(arguments[0])
@@ -122,7 +131,7 @@ func main() {
 			}
 		}
 
-		if err := create(archivePath, files, dirs, outputDir, numWorkers); err != nil {
+		if err := create(archivePath, files, dirs, outputDir, numWorkers, version); err != nil {
 			log.Fatal(fmt.Errorf("PLSR::%w", err))
 		}
 
