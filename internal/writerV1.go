@@ -106,7 +106,7 @@ func (writer *ArchiveWriterV1) AddFilesConcurrent(files []FileStruct, numWorkers
 
 	res := StartCompressionPool(jobs, numWorkers)
 
-	if err := WriteArchive(writer, res); err != nil {
+	if err := WriteArchiveV1(writer, res); err != nil {
 		return fmt.Errorf("WRITERV1::error writing to archive concurrently: %w", err)
 	}
 
@@ -176,7 +176,7 @@ func (writer *ArchiveWriterV1) Close() error {
 	}
 
 	if len(writer.Files) > int(MAXUINT32) {
-		return fmt.Errorf("WRITERV2::file count %d exceeds limit", len(writer.Files))
+		return fmt.Errorf("WRITERV1::file count %d exceeds limit", len(writer.Files))
 	}
 
 	outputInfo, err := writer.OutputFile.Stat()

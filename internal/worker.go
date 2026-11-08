@@ -54,7 +54,7 @@ func appendResult(
 	return nil
 }
 
-func WriteArchive(
+func WriteArchiveV1(
 	writer *ArchiveWriterV1,
 	results <-chan ResultCompress) error {
 
@@ -263,13 +263,13 @@ func StartChunkPool(
 	files []FileStruct,
 	workerCount int,
 	writer *ArchiveWriterV2,
-) (<-chan ChunkResult, <-chan []FileEntryChunk, <-chan error) {
+	errors chan error,
+) (<-chan ChunkResult, <-chan []FileEntryChunk) {
 
 	var wg sync.WaitGroup
 
 	jobs := make(chan ChunkJob, queueCapacity)
 	results := make(chan ChunkResult, queueCapacity)
-	errors := make(chan error, len(writer.Files))
 
 	fileEntryMetadata := make(chan []FileEntryChunk, 1)
 
@@ -282,12 +282,101 @@ func StartChunkPool(
 		go ChunkWorker(jobs, results, errors, &wg)
 	}
 
-	// Close results after all workers finish.
+	// Close results and errors after all workers finish.
 	go func() {
 		wg.Wait()
 		close(results)
-		close(errors)
 	}()
 
-	return results, fileEntryMetadata, errors
+	return results, fileEntryMetadata
+}
+
+func writeChunk(
+	writer *ArchiveWriterV2,
+	res ChunkResult,
+	dataOffset uint64,
+) (err error) {
+	ok := false
+
+	//cleanup function
+	defer func() {
+
+		if !ok {
+
+			rollbackErr := writer.OutputFile.Truncate(int64(dataOffset))
+			if rollbackErr != nil {
+				writer.Status = Failed
+				err = errors.Join(err, rollbackErr)
+			}
+
+			_, seekErr := writer.OutputFile.Seek(int64(dataOffset), io.SeekStart)
+			if seekErr != nil {
+				//memory truncated but file pointer not moved
+				writer.Status = Failed
+				err = errors.Join(err, seekErr)
+			}
+		}
+	}()
+
+	n, writeErr := writer.OutputFile.Write(res.Data)
+	if writeErr != nil {
+		return writeErr
+	}
+
+	if n != int(res.CompressedSize) {
+		return fmt.Errorf("WORKER::wrote %d bytes instead of %d", n, res.CompressedSize)
+
+	}
+
+	ok = true
+
+	return nil
+}
+
+func WriteArchiveV2(
+	writer *ArchiveWriterV2,
+	results <-chan ChunkResult,
+	wg *sync.WaitGroup,
+	errors chan<- error,
+) {
+
+	defer wg.Done()
+
+	if writer.Status != Active {
+		errors <- fmt.Errorf("WORKER::invalid writer status: %d", writer.Status)
+
+	}
+
+	var firstErr error
+	for res := range results {
+
+		if firstErr != nil {
+			continue
+		}
+
+		dataOffset, offErr := writer.OutputFile.Seek(0, io.SeekCurrent)
+		if offErr != nil {
+			firstErr = offErr
+			continue
+		}
+
+		if err := writeChunk(writer, res, uint64(dataOffset)); err != nil {
+			firstErr = err
+			continue
+		}
+
+		chunkEntry := ChunkEntry{
+			FileID:            res.FileID,
+			ChunkIndex:        res.ChunkIndex,
+			DataOffset:        uint64(dataOffset),
+			OriginalSize:      res.OriginalSize,
+			CompressedSize:    res.CompressedSize,
+			CompressionMethod: res.CompressionMethod,
+			Checksum:          res.Checksum,
+		}
+
+		writer.Chunks = append(writer.Chunks, chunkEntry)
+	}
+
+	errors <- firstErr
 }

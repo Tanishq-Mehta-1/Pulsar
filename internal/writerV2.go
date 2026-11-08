@@ -98,7 +98,7 @@ func (writer *ArchiveWriterV2) CreateArchive(
 
 func (writer *ArchiveWriterV2) AddFilesConcurrent(
 	files []FileStruct,
-	numWorkers int) error {
+	numWorkers int) (err error) {
 
 	if writer.Status != Active {
 		return fmt.Errorf("WRITERV2::invalid ArchiveWriterV2 status %d", writer.Status)
@@ -108,27 +108,32 @@ func (writer *ArchiveWriterV2) AddFilesConcurrent(
 		return fmt.Errorf("WRITERV2::worker count must be positive")
 	}
 
-	res, fileEntries, errors := StartChunkPool(files, numWorkers, writer)
+	var wg sync.WaitGroup
+	errors := make(chan error, len(writer.Files))
+
+	res, fileEntries := StartChunkPool(files, numWorkers, writer, errors)
+
+	wg.Add(1)
+	go WriteArchiveV2(writer, res, &wg, errors)
 
 	go func() {
 		var firstErr error
 		for err := range errors {
 			if err != nil && firstErr == nil {
+				writer.Status = Failed
+				fmt.Println(err)
 				firstErr = err
 			}
 		}
+
+		err = firstErr
 	}()
 
-	// jobs := make([]JobCompress, 0, len(files))
-	// for _, file := range files {
+	wg.Wait()
+	close(errors)
 
-	// 	jobs = append(jobs, JobCompress{Path: file.Path, ArchivePath: file.ArchivePath, CompressionMethod: file.Method})
-	// }
-
-	// res := StartCompressionPool(jobs, numWorkers)
-
-	if err := WriteArchiveV2(writer, res, fileEntries); err != nil {
-		return fmt.Errorf("WRITERV2::error writing to archive concurrently: %w", err)
+	for _, file := range <-fileEntries {
+		writer.Files = append(writer.Files, file)
 	}
 
 	return nil
@@ -147,7 +152,7 @@ func (writer *ArchiveWriterV2) AddDirectory(
 	}
 
 	var files []FileStruct
-	var directories []FileEntry
+	var directories []FileEntryChunk
 
 	if err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
 
@@ -166,7 +171,7 @@ func (writer *ArchiveWriterV2) AddDirectory(
 
 		if d.IsDir() {
 
-			directories = append(directories, FileEntry{
+			directories = append(directories, FileEntryChunk{
 				Filename:       relPath + "/",
 				FilenameLength: uint8(len(relPath + "/")),
 				Type:           Directory})
@@ -206,6 +211,7 @@ func (writer *ArchiveWriterV2) generateChunks(
 
 	for _, file := range files {
 
+		success := true
 		fileId := writer.NextFileID
 
 		if len(file.ArchivePath) > 255 {
@@ -237,19 +243,22 @@ func (writer *ArchiveWriterV2) generateChunks(
 
 		var chunkCount uint32 = 0
 		var i int64
+
 		for i = 0; i < fileSize; i += int64(writer.ChunkSize) {
 
 			var bufSize int = int(min(writer.ChunkSize, uint32(fileSize-i)))
 			buffer := make([]byte, bufSize)
 			if n, err := f.ReadAt(buffer, i); err != nil || n != bufSize {
 
+				success = false
 				f.Close()
 				if err != nil {
 					errors <- err
+					break
 				}
 
 				errors <- fmt.Errorf("WRITERV2::wrote %d bytes to chunk instead of %d", n, bufSize)
-				continue
+				break
 			}
 
 			chunkJob := ChunkJob{
@@ -263,20 +272,23 @@ func (writer *ArchiveWriterV2) generateChunks(
 			jobs <- chunkJob
 		}
 
-		if err = f.Close(); err != nil {
-			errors <- err
-			continue
+		if success {
+			if err = f.Close(); err != nil {
+				errors <- err
+				continue
+			}
+
+			fChunk := FileEntryChunk{
+				FilenameLength: uint8(len(file.ArchivePath)),
+				Filename:       file.ArchivePath,
+				FileID:         uint32(fileId),
+				OriginalSize:   uint64(info.Size()),
+				ChunkCount:     chunkCount,
+			}
+
+			res = append(res, fChunk)
 		}
 
-		fChunk := FileEntryChunk{
-			FilenameLength: uint8(len(file.ArchivePath)),
-			Filename:       file.ArchivePath,
-			FileID:         uint32(fileId),
-			OriginalSize:   uint64(info.Size()),
-			ChunkCount:     chunkCount,
-		}
-
-		res = append(res, fChunk)
 		writer.NextFileID++
 
 	}

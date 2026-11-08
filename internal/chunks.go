@@ -18,14 +18,16 @@ type ChunkEntry struct {
 	Checksum          uint32            //4 bytes
 }
 
-const FileEntryChunkLength int = 17
+const FileEntryChunkLength int = 18
 
 type FileEntryChunk struct {
-	FilenameLength uint8  //1 bytes
-	Filename       string //variable
-	FileID         uint32 //4 bytes
-	OriginalSize   uint64 //8 bytes
-	ChunkCount     uint32 //4 bytes
+	FilenameLength uint8     //1 byte
+	Filename       string    //variable
+	FileID         uint32    //4 bytes
+	OriginalSize   uint64    //8 bytes
+	ChunkCount     uint32    //4 bytes
+	Type           EntryType //1 byte
+
 }
 
 func SerializeFileEntryChunk(entry *FileEntryChunk) ([]byte, error) {
@@ -44,6 +46,12 @@ func SerializeFileEntryChunk(entry *FileEntryChunk) ([]byte, error) {
 		return nil, errors.New("CHUNK::filename length does not match")
 	}
 
+	switch entry.Type {
+	case File, Directory:
+	default:
+		return nil, fmt.Errorf("CHUNK::invalid fileEntry type")
+	}
+
 	buffer := make([]byte, FileEntryChunkLength+filenameLen)
 
 	copy(buffer[0:1], []byte{(byte(entry.FilenameLength))})
@@ -51,6 +59,7 @@ func SerializeFileEntryChunk(entry *FileEntryChunk) ([]byte, error) {
 	binary.BigEndian.PutUint32(buffer[1+filenameLen:5+filenameLen], entry.FileID)
 	binary.BigEndian.PutUint64(buffer[5+filenameLen:13+filenameLen], entry.OriginalSize)
 	binary.BigEndian.PutUint32(buffer[13+filenameLen:17+filenameLen], entry.ChunkCount)
+	copy(buffer[17+filenameLen:18+filenameLen], []byte{(byte(entry.Type))})
 
 	return buffer, nil
 }
@@ -76,6 +85,13 @@ func DeserializeFileEntryChunk(data []byte) (*FileEntryChunk, int, error) {
 	fileID := binary.BigEndian.Uint32(data[1+filenameLen : 5+filenameLen])
 	originalSize := binary.BigEndian.Uint64(data[5+filenameLen : 13+filenameLen])
 	chunkCount := binary.BigEndian.Uint32(data[13+filenameLen : FileEntryChunkLength+filenameLen])
+	fileType := EntryType(data[17+filenameLen : 18+filenameLen][0])
+
+	switch fileType {
+	case Directory, File:
+	default:
+		return nil, 0, fmt.Errorf("CHUNK::invalid fileEntry type")
+	}
 
 	return &FileEntryChunk{
 		FilenameLength: byte(filenameLen),
@@ -83,6 +99,7 @@ func DeserializeFileEntryChunk(data []byte) (*FileEntryChunk, int, error) {
 		FileID:         fileID,
 		OriginalSize:   originalSize,
 		ChunkCount:     chunkCount,
+		Type:           fileType,
 	}, FileEntryChunkLength + int(filenameLen), nil
 }
 
