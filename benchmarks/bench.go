@@ -55,7 +55,7 @@ func runPulsar(binary, archivePath, input, output string, workers int) (time.Dur
 	)
 	actualArchivePath := filepath.Join(
 		filepath.Dir(archivePath),
-		archiveName+".fz",
+		archiveName+".plsr",
 	)
 
 	_ = os.Remove(actualArchivePath)

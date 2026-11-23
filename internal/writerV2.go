@@ -38,9 +38,11 @@ func (writer *ArchiveWriterV2) CreateArchive(
 		fileName = "output"
 	}
 
-	if chunkSize > MAXCHUNKSIZE {
-		return fmt.Errorf("WRITERV2::chunk size of %d larger than Max Chunk size allowed: %d", chunkSize, MAXCHUNKSIZE)
+	if chunkSize > MAXCHUNKSIZE || chunkSize < 1 {
+		return fmt.Errorf("WRITERV2::chunk size of %d not in the valid range: [1, %d]", chunkSize, MAXCHUNKSIZE)
 	}
+
+	writer.ChunkSize = chunkSize
 
 	fileName += extension
 
@@ -219,6 +221,8 @@ func (writer *ArchiveWriterV2) generateChunks(
 
 	for _, file := range files {
 
+		writer.NextFileID++
+
 		success := true
 		fileId := writer.NextFileID
 
@@ -254,7 +258,7 @@ func (writer *ArchiveWriterV2) generateChunks(
 
 		for i = 0; i < fileSize; i += int64(writer.ChunkSize) {
 
-			var bufSize int = int(min(writer.ChunkSize, uint32(fileSize-i)))
+			var bufSize int = int(min(int64(writer.ChunkSize), fileSize-i))
 			buffer := make([]byte, bufSize)
 			if n, err := f.ReadAt(buffer, i); err != nil || n != bufSize {
 
@@ -296,16 +300,12 @@ func (writer *ArchiveWriterV2) generateChunks(
 
 			res = append(res, fChunk)
 		}
-
-		writer.NextFileID++
-
 	}
 
 	//when done, close jobs
 	close(jobs)
 
 	metadata <- res
-	errors <- nil
 }
 
 func (writer *ArchiveWriterV2) Close() error {

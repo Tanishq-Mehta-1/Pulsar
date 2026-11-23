@@ -97,7 +97,7 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
 	}
 
-	if filepath.Ext(path) != ".fz" {
+	if filepath.Ext(path) != ".plsr" {
 		return fmt.Errorf("READER::invalid archive extension")
 	}
 
