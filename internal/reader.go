@@ -552,7 +552,7 @@ func (reader *ArchiveReader) ExtractAllConcurrent(
 				reader.Status = Failed
 
 				//remove all paths
-				for _, file := range pathMap {
+				for _, file := range fileMap {
 					if err := file.Close(); err != nil {
 						fmt.Printf("READER::Error while extracting::%v\n", err)
 					}
@@ -621,7 +621,9 @@ func (reader *ArchiveReader) ExtractAllConcurrent(
 			}
 		}
 
-		//function to start the decompression pool
+		if err := StartChunkDecompressionPool(jobs, reader, numWorkers, reader.OutputFile); err != nil {
+			return err
+		}
 
 		for _, file := range fileMap {
 			if err := file.Close(); err != nil {

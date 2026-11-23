@@ -113,7 +113,7 @@ func (writer *ArchiveWriterV2) AddFilesConcurrent(
 	var wg sync.WaitGroup
 	errors := make(chan error, len(files))
 
-	res, fileEntries := StartChunkPool(files, numWorkers, writer, errors)
+	res, fileEntries := StartChunkCompressionPool(files, numWorkers, writer, errors)
 
 	wg.Add(1)
 	go WriteArchiveV2(writer, res, &wg, errors)
@@ -235,7 +235,7 @@ func (writer *ArchiveWriterV2) generateChunks(
 		if archivePath == "" {
 			archivePath = filepath.Base(file.Path)
 		}
-		archivePath = filepath.ToSlash(file.Path)
+		archivePath = filepath.ToSlash(archivePath)
 
 		if len(file.ArchivePath) > 255 {
 			errors <- fmt.Errorf("WRITERV2::archive filename too long")
@@ -307,6 +307,7 @@ func (writer *ArchiveWriterV2) generateChunks(
 				FileID:         uint32(fileId),
 				OriginalSize:   uint64(info.Size()),
 				ChunkCount:     chunkCount,
+				Type:           File,
 			}
 
 			res = append(res, fChunk)

@@ -207,6 +207,10 @@ func StartDecompressionPool(
 	reader *ArchiveReader,
 	workerCount int) error {
 
+	if reader.Version != 1 {
+		return fmt.Errorf("WORKER::invalid reader version : %d\n", reader.Version)
+	}
+
 	wg := sync.WaitGroup{}
 
 	jobs := make(chan JobDecompress, queueCapacity)
@@ -238,7 +242,7 @@ func StartDecompressionPool(
 	return firstErr
 }
 
-func ChunkWorker(
+func ChunkCompressionWorker(
 	jobs <-chan ChunkJob,
 	results chan<- ChunkResult,
 	errors chan<- error,
@@ -259,7 +263,7 @@ func ChunkWorker(
 	}
 }
 
-func StartChunkPool(
+func StartChunkCompressionPool(
 	files []FileStruct,
 	workerCount int,
 	writer *ArchiveWriterV2,
@@ -279,7 +283,7 @@ func StartChunkPool(
 
 	for range workerCount {
 		wg.Add(1)
-		go ChunkWorker(jobs, results, errors, &wg)
+		go ChunkCompressionWorker(jobs, results, errors, &wg)
 	}
 
 	// Close results and errors after all workers finish.
@@ -379,4 +383,62 @@ func WriteArchiveV2(
 	}
 
 	errors <- firstErr
+}
+
+func ChunkDecompressionWorker(
+	jobs <-chan JobDecompressChunk,
+	errors chan<- error,
+	archive *os.File,
+	wg *sync.WaitGroup,
+) {
+
+	defer wg.Done()
+
+	for job := range jobs {
+
+		if err := DecompressChunk(job, archive); err != nil {
+			errors <- err
+		}
+	}
+}
+
+func StartChunkDecompressionPool(
+	jobsList []JobDecompressChunk,
+	reader *ArchiveReader,
+	workerCount int,
+	archive *os.File) error {
+
+	if reader.Version != 2 {
+		return fmt.Errorf("WORKER::invalid reader version : %d\n", reader.Version)
+	}
+
+	wg := sync.WaitGroup{}
+
+	jobs := make(chan JobDecompressChunk, queueCapacity)
+	errors := make(chan error, len(jobsList))
+
+	for range workerCount {
+		wg.Add(1)
+		go ChunkDecompressionWorker(jobs, errors, archive, &wg)
+	}
+
+	for _, job := range jobsList {
+		jobs <- job
+	}
+
+	close(jobs)
+
+	go func() {
+		wg.Wait()
+		close(errors)
+	}()
+
+	var firstErr error
+	for err := range errors {
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	return firstErr
 }
