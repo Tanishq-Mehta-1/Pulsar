@@ -295,8 +295,9 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 		filesRead := 0
 
 		idMap := make(map[uint32]bool)
-
+		seenPaths := make(map[string]bool)
 		for filesRead < int(archiveFooter.EntryCount) {
+
 			fileEntry, bytesRead, err := DeserializeFileEntryChunk(directoryData[position:])
 			if err != nil {
 
@@ -304,6 +305,20 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 				reader.FilesV2 = nil
 				return err
 			}
+
+			if fileEntry.FilenameLength == 0 ||
+				len(fileEntry.Filename) != int(fileEntry.FilenameLength) {
+				return fmt.Errorf("READER::invalid filename length")
+			}
+
+			if seenPaths[fileEntry.Filename] {
+				return fmt.Errorf(
+					"READER::duplicate archive path: %s",
+					fileEntry.Filename,
+				)
+			}
+
+			seenPaths[fileEntry.Filename] = true
 
 			switch fileEntry.Type {
 
@@ -324,6 +339,7 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 					return fmt.Errorf("READER::duplicate file id: %d", fileEntry.FileID)
 				}
 				idMap[fileEntry.FileID] = true
+
 			default:
 				return fmt.Errorf("READER::invalid fileEntry type")
 			}

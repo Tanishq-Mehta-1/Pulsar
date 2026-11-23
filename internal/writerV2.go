@@ -98,7 +98,7 @@ func (writer *ArchiveWriterV2) CreateArchive(
 
 func (writer *ArchiveWriterV2) AddFilesConcurrent(
 	files []FileStruct,
-	numWorkers int) (err error) {
+	numWorkers int) error {
 
 	if writer.Status != Active {
 		return fmt.Errorf("WRITERV2::invalid ArchiveWriterV2 status %d", writer.Status)
@@ -109,28 +109,36 @@ func (writer *ArchiveWriterV2) AddFilesConcurrent(
 	}
 
 	var wg sync.WaitGroup
-	errors := make(chan error, len(writer.Files))
+	errors := make(chan error, len(files))
 
 	res, fileEntries := StartChunkPool(files, numWorkers, writer, errors)
 
 	wg.Add(1)
 	go WriteArchiveV2(writer, res, &wg, errors)
 
+	var wg_err sync.WaitGroup
+	var firstErr error
+	wg_err.Add(1)
+
 	go func() {
-		var firstErr error
 		for err := range errors {
 			if err != nil && firstErr == nil {
-				writer.Status = Failed
 				fmt.Println(err)
 				firstErr = err
 			}
 		}
 
-		err = firstErr
+		wg_err.Done()
 	}()
 
 	wg.Wait()
 	close(errors)
+	wg_err.Wait()
+
+	if firstErr != nil {
+		writer.Status = Failed
+		return firstErr
+	}
 
 	for _, file := range <-fileEntries {
 		writer.Files = append(writer.Files, file)
