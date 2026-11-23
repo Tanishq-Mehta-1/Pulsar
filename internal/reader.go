@@ -1,6 +1,7 @@
 package archive
 
 import (
+	"cmp"
 	"compress/flate"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 type ArchiveReader struct {
@@ -91,7 +93,8 @@ func (reader *ArchiveReader) validateChunks() (bool, error) {
 	return true, nil
 }
 
-func (reader *ArchiveReader) OpenArchive(path string) error {
+func (reader *ArchiveReader) OpenArchive(
+	path string) error {
 
 	if reader.Status != Created {
 		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
@@ -421,7 +424,9 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	return nil
 }
 
-func (reader *ArchiveReader) ExtractFile(fileName string, dst string) (err error) {
+func (reader *ArchiveReader) ExtractFile(
+	fileName string,
+	dst string) (err error) {
 
 	if reader.Status != Active {
 		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
@@ -504,34 +509,138 @@ func (reader *ArchiveReader) ExtractFile(fileName string, dst string) (err error
 	return nil
 }
 
-func (reader *ArchiveReader) ExtractAllConcurrent(outputDir string, numWorkers int) error {
+func (reader *ArchiveReader) ExtractAllConcurrent(
+	outputDir string,
+	numWorkers int) error {
 
 	if reader.Status != Active {
 		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
 	}
 
-	jobs := make([]JobDecompress, 0, len(reader.Files))
-
-	// fmt.Println("Files in archive:", len(reader.Files))
-
-	for _, entry := range reader.Files {
-		newEntry := entry
-
-		if !filepath.IsLocal(filepath.FromSlash(entry.Filename)) {
-			return fmt.Errorf("invalid archive path: %s", entry.Filename)
-		}
-
-		if outputDir != "" {
-			newEntry.Filename = filepath.Join(outputDir, filepath.FromSlash(entry.Filename))
-		}
-
-		jobs = append(jobs, JobDecompress{Entry: newEntry})
+	if numWorkers <= 0 {
+		return fmt.Errorf("READER::invalid numWorkers: %d", numWorkers)
 	}
 
-	return StartDecompressionPool(jobs, reader, numWorkers)
+	switch reader.Version {
+	case 1:
+		jobs := make([]JobDecompress, 0, len(reader.Files))
+
+		// fmt.Println("Files in archive:", len(reader.Files))
+
+		for _, entry := range reader.Files {
+			newEntry := entry
+
+			if !filepath.IsLocal(filepath.FromSlash(entry.Filename)) {
+				return fmt.Errorf("READER::invalid archive path: %s", entry.Filename)
+			}
+
+			if outputDir != "" {
+				newEntry.Filename = filepath.Join(outputDir, filepath.FromSlash(entry.Filename))
+			}
+
+			jobs = append(jobs, JobDecompress{Entry: newEntry})
+		}
+
+		return StartDecompressionPool(jobs, reader, numWorkers)
+	case 2:
+
+		fileMap := make(map[uint32]*os.File)
+
+		success := false
+		defer func() {
+			if !success {
+				reader.Status = Failed
+
+				//remove all paths
+				for _, file := range pathMap {
+					if err := file.Close(); err != nil {
+						fmt.Printf("READER::Error while extracting::%v\n", err)
+					}
+				}
+			}
+		}()
+
+		for _, entry := range reader.FilesV2 {
+
+			if !filepath.IsLocal(filepath.FromSlash(entry.Filename)) {
+				return fmt.Errorf("READER::invalid archive path: %s", entry.Filename)
+			}
+
+			targetPath := filepath.Join(outputDir, filepath.FromSlash(entry.Filename))
+
+			switch entry.Type {
+			case Directory:
+				if err := os.MkdirAll(targetPath, 0755); err != nil {
+					return err
+				}
+			case File:
+				if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+					return err
+				}
+
+				dst, err := os.Create(targetPath)
+				if err != nil {
+					return err
+				}
+
+				fileMap[entry.FileID] = dst
+			default:
+				return fmt.Errorf("READER::invalid FileType: %d\n", entry.Type)
+			}
+		}
+
+		//make chunk map, and then sort
+		chunkMap := make(map[uint32][]ChunkEntry)
+
+		for _, chunk := range reader.ChunksV2 {
+			chunkMap[chunk.FileID] = append(chunkMap[chunk.FileID], chunk)
+		}
+
+		for _, entry := range reader.FilesV2 {
+
+			if entry.ChunkCount == 0 {
+				continue
+			}
+
+			slices.SortFunc(chunkMap[entry.FileID], func(a, b ChunkEntry) int {
+				return cmp.Compare(a.ChunkIndex, b.ChunkIndex)
+			})
+		}
+
+		var jobs []JobDecompressChunk
+
+		for _, entry := range reader.FilesV2 {
+			if entry.ChunkCount == 0 {
+				continue
+			}
+
+			offset := 0
+			for _, chunk := range chunkMap[entry.FileID] {
+				jobs = append(jobs, JobDecompressChunk{Chunk: chunk, DstFile: fileMap[entry.FileID], Dstoffset: int64(offset)})
+				offset += int(chunk.OriginalSize)
+			}
+		}
+
+		//function to start the decompression pool
+
+		for _, file := range fileMap {
+			if err := file.Close(); err != nil {
+				return err
+			}
+		}
+
+		success = true
+	default:
+		return fmt.Errorf("READER::invalid reader version: %d", reader.Version)
+	}
+
+	return nil
+
 }
 
-func (reader *ArchiveReader) extractCompressed(entry FileEntry, dst *os.File) (err error) {
+func (reader *ArchiveReader) extractCompressed(
+	entry FileEntry,
+	dst *os.File) (err error) {
 
 	sectionReader := io.NewSectionReader(reader.OutputFile, int64(entry.DataOffset), int64(entry.CompressedSize))
 	flateReader := flate.NewReader(sectionReader)
