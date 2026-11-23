@@ -226,6 +226,17 @@ func (writer *ArchiveWriterV2) generateChunks(
 		success := true
 		fileId := writer.NextFileID
 
+		if file.Path == "" {
+			errors <- fmt.Errorf("WRITERV2::empty file path for fileID %d", fileId)
+			continue
+		}
+
+		archivePath := file.ArchivePath
+		if archivePath == "" {
+			archivePath = filepath.Base(file.Path)
+		}
+		archivePath = filepath.ToSlash(file.Path)
+
 		if len(file.ArchivePath) > 255 {
 			errors <- fmt.Errorf("WRITERV2::archive filename too long")
 			continue
@@ -291,8 +302,8 @@ func (writer *ArchiveWriterV2) generateChunks(
 			}
 
 			fChunk := FileEntryChunk{
-				FilenameLength: uint8(len(file.ArchivePath)),
-				Filename:       file.ArchivePath,
+				FilenameLength: uint8(len(archivePath)),
+				Filename:       archivePath,
 				FileID:         uint32(fileId),
 				OriginalSize:   uint64(info.Size()),
 				ChunkCount:     chunkCount,

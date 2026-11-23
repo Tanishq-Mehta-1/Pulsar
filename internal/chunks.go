@@ -37,8 +37,10 @@ func SerializeFileEntryChunk(entry *FileEntryChunk) ([]byte, error) {
 	}
 
 	filenameLen := len(entry.Filename)
-	if filenameLen > 255 {
-		return nil, errors.New("CHUNK::filename too long")
+	// fmt.Printf("CHUNK details: length %d (type=%d, fileID=%d, name=%q)\n", filenameLen, entry.Type, entry.FileID, entry.Filename)
+
+	if filenameLen == 0 || filenameLen > 255 {
+		return nil, fmt.Errorf("CHUNK::invalid filename length %d (type=%d, fileID=%d, name=%q)", filenameLen, entry.Type, entry.FileID, entry.Filename)
 	}
 
 	//prechecks

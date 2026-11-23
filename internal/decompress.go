@@ -34,7 +34,7 @@ func DecompressFile(entry *FileEntry, section *io.SectionReader) (err error) {
 	success := false
 	defer func() {
 		if !success {
-			if rmErr := os.Remove(dst.Name()); err != nil {
+			if rmErr := os.Remove(dst.Name()); rmErr != nil {
 				err = errors.Join(err, fmt.Errorf("DECOMPRESS::error deleting file: %s after failed extraction", dst.Name()), rmErr)
 			}
 		}
