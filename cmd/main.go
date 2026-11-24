@@ -92,6 +92,7 @@ func main() {
 		numWorkers := -1
 		outputDir := ""
 		version := 1
+		chunkSize := 1 //in KBs
 		takingFiles := true
 
 		for i, n := 2, len(arguments); i < n; i++ {
@@ -118,6 +119,14 @@ func main() {
 					log.Fatal(fmt.Errorf("PLSR::CREATE::%w", err))
 				}
 				i++
+			} else if arg == "--chunk-size" && i+1 < n {
+				takingFiles = false
+				var err error
+				chunkSize, err = strconv.Atoi(arguments[i+1])
+				if err != nil {
+					log.Fatal(fmt.Errorf("PLSR::CREATE::%w", err))
+				}
+				i++
 			} else {
 				if !takingFiles {
 					handle_invalid(arguments[0])
@@ -131,7 +140,7 @@ func main() {
 			}
 		}
 
-		if err := create(archivePath, files, dirs, outputDir, numWorkers, version); err != nil {
+		if err := create(archivePath, files, dirs, outputDir, version, numWorkers, uint32(chunkSize)); err != nil {
 			log.Fatal(fmt.Errorf("PLSR::%w", err))
 		}
 
@@ -152,7 +161,4 @@ func main() {
 	default:
 		handle_invalid(arguments[0])
 	}
-
-	// test_writer()
-	// test_reader()
 }
