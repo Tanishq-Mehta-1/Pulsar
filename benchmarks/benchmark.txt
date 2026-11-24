@@ -16,3 +16,36 @@ System ZIP      1        3244.12      202.41       38.11        60.86        26.
 7z LZMA2        1        2045.27      575.79       11.88        38.37        9.26         448.85      
 tar + pigz      0        3246.94      36.36        31.91        60.92        146.61       167.04      
 tar + zstd      0        3186.82      10.30        11.43        59.79        517.69       466.45 
+
+FOR v2, 
+
+[deo3d2y@DEOs Pulsar]$ go build -o ./plsr ./cmd
+
+mkdir -p ~/benchmark-tmp
+
+TMPDIR="$HOME/benchmark-tmp" go run ./benchmarks \
+    -plsr ./plsr \
+    -input ./testdata \
+    -runs 3 \
+    -chunk-size 256
+Dataset: /home/deo3d2y/Desktop/Dev/Pulsar/testdata
+Original size: 655.35 MB
+Runs: 3
+V2 Chunk size: 256 KB
+
+Format           Workers  Archive MB   Compress s   Extract s    Ratio %      Comp MB/s    Extract MB/s
+PulsarV1-1       1        478.66       11.91        4.68         73.04        55.02        139.91      
+PulsarV1-2       2        478.66       7.37         2.89         73.04        88.98        227.12      
+PulsarV1-4       4        478.66       5.26         2.49         73.04        124.50       262.93      
+PulsarV1-8       8        478.66       5.02         2.26         73.04        130.65       289.85      
+PulsarV1-16      16       478.66       5.20         2.15         73.04        126.00       304.29      
+PulsarV1-64      64       478.66       5.25         2.15         73.04        124.81       304.42      
+PulsarV2-1       1        481.64       9.15         4.81         73.49        71.65        136.11      
+PulsarV2-2       2        481.64       5.00         2.99         73.49        131.13       219.19      
+PulsarV2-4       4        481.64       2.98         2.01         73.49        219.88       325.84      
+PulsarV2-8       8        481.64       2.24         1.83         73.49        292.20       358.42      
+PulsarV2-16      16       481.64       2.07         1.95         73.49        316.49       336.85      
+PulsarV2-64      64       481.64       2.23         1.60         73.49        293.59       409.49      
+Go ZIP           1        480.30       8.78         4.59         73.29        74.67        142.69      
+tar + pigz       0        462.09       3.62         2.82         70.51        180.83       232.27      
+tar + zstd       0        473.40       1.25         1.36         72.24        526.00       480.68  

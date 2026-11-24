@@ -44,11 +44,10 @@ func requireTools(names ...string) map[string]bool {
 	return available
 }
 
-func runPulsar(binary, archivePath, input, output string, workers int) (time.Duration, time.Duration, int64, error) {
+func runPulsar(binary, archivePath, input, output string, workers, version, chunkSizeKB int) (time.Duration, time.Duration, int64, error) {
 	_ = os.Remove(archivePath)
 	_ = os.RemoveAll(output)
 
-	// Pulsar automatically appends .fz
 	archiveName := strings.TrimSuffix(
 		filepath.Base(archivePath),
 		filepath.Ext(archivePath),
@@ -61,15 +60,20 @@ func runPulsar(binary, archivePath, input, output string, workers int) (time.Dur
 	_ = os.Remove(actualArchivePath)
 	defer os.Remove(actualArchivePath)
 
-	start := time.Now()
-	cmd := exec.Command(
-		binary, "create", archiveName, input,
+	createArgs := []string{
+		"create", archiveName, input,
 		"-o", filepath.Dir(archivePath),
 		"--workers", fmt.Sprint(workers),
-	)
+		"-v", fmt.Sprint(version),
+	}
+	if version == 2 && chunkSizeKB > 0 {
+		createArgs = append(createArgs, "--chunk-size", fmt.Sprint(chunkSizeKB))
+	}
 
+	start := time.Now()
+	cmd := exec.Command(binary, createArgs...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return 0, 0, 0, fmt.Errorf("Pulsar create: %w\n%s", err, out)
+		return 0, 0, 0, fmt.Errorf("Pulsar v%d create: %w\n%s", version, err, out)
 	}
 	compressTime := time.Since(start)
 
@@ -83,9 +87,8 @@ func runPulsar(binary, archivePath, input, output string, workers int) (time.Dur
 		binary, "extract", actualArchivePath,
 		"-o", output, "--workers", fmt.Sprint(workers),
 	)
-
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return 0, 0, 0, fmt.Errorf("Pulsar extract: %w\n%s", err, out)
+		return 0, 0, 0, fmt.Errorf("Pulsar v%d extract: %w\n%s", version, err, out)
 	}
 
 	return compressTime, time.Since(start), info.Size(), nil
@@ -274,7 +277,7 @@ func printResult(r Result, originalSize int64) {
 	ratio := float64(r.ArchiveSize) / float64(originalSize) * 100
 	compressSpeed := float64(originalSize) / r.Compress.Seconds() / (1024 * 1024)
 	extractSpeed := float64(originalSize) / r.Extract.Seconds() / (1024 * 1024)
-	fmt.Printf("%-15s %-8d %-12.2f %-12.2f %-12.2f %-12.2f %-12.2f %-12.2f\n",
+	fmt.Printf("%-16s %-8d %-12.2f %-12.2f %-12.2f %-12.2f %-12.2f %-12.2f\n",
 		r.Name, r.Workers,
 		float64(r.ArchiveSize)/(1024*1024),
 		r.Compress.Seconds(), r.Extract.Seconds(), ratio,
@@ -290,8 +293,6 @@ func runRepeated(name string, workers int, runs int, originalSize int64,
 		archivePath := filepath.Join(tempDir, fmt.Sprintf("bench-%s-%d.archive", strings.ReplaceAll(name, " ", "-"), run))
 		output := filepath.Join(tempDir, fmt.Sprintf("out-%s-%d", strings.ReplaceAll(name, " ", "-"), run))
 
-		// Always remove benchmark artifacts, including when compression or
-		// extraction fails. The archive must remain until extraction finishes.
 		func() {
 			defer os.RemoveAll(output)
 			defer os.Remove(archivePath)
@@ -323,9 +324,10 @@ func main() {
 	binary := flag.String("plsr", "./plsr", "Path to Pulsar executable")
 	input := flag.String("input", "", "Input directory to benchmark")
 	runs := flag.Int("runs", 3, "Number of benchmark repetitions")
+	chunkSize := flag.Int("chunk-size", 256, "Chunk size in KB for Pulsar V2")
 	flag.Parse()
 
-	if *input == "" || *runs <= 0 {
+	if *input == "" || *runs <= 0 || *chunkSize <= 0 {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -362,21 +364,25 @@ func main() {
 	defer os.RemoveAll(tempDir)
 
 	available := requireTools("zip", "unzip", "7z", "pigz", "zstd", "tar")
-	fmt.Printf("Dataset: %s\nOriginal size: %.2f MB\nRuns: %d\n\n",
-		inputPath, float64(originalSize)/(1024*1024), *runs)
-	fmt.Printf("%-15s %-8s %-12s %-12s %-12s %-12s %-12s %-12s\n",
+	fmt.Printf("Dataset: %s\nOriginal size: %.2f MB\nRuns: %d\nV2 Chunk size: %d KB\n\n",
+		inputPath, float64(originalSize)/(1024*1024), *runs, *chunkSize)
+	fmt.Printf("%-16s %-8s %-12s %-12s %-12s %-12s %-12s %-12s\n",
 		"Format", "Workers", "Archive MB", "Compress s", "Extract s",
 		"Ratio %", "Comp MB/s", "Extract MB/s")
 
-	pulsarBench := func(workers int) Benchmark {
+	pulsarBench := func(version, workers int) Benchmark {
 		return func(a, i, o string) (time.Duration, time.Duration, int64, error) {
-			return runPulsar(binaryPath, a, i, o, workers)
+			return runPulsar(binaryPath, a, i, o, workers, version, *chunkSize)
 		}
 	}
-	for _, workers := range []int{1, 2, 4, 8, 16, 64} {
-		if err := runRepeated(fmt.Sprintf("Pulsar-%d", workers), workers, *runs,
-			originalSize, tempDir, inputPath, pulsarBench(workers)); err != nil {
-			panic(err)
+
+	for _, version := range []int{1, 2} {
+		for _, workers := range []int{1, 2, 4, 8, 16, 64} {
+			name := fmt.Sprintf("PulsarV%d-%d", version, workers)
+			if err := runRepeated(name, workers, *runs,
+				originalSize, tempDir, inputPath, pulsarBench(version, workers)); err != nil {
+				panic(err)
+			}
 		}
 	}
 
@@ -387,40 +393,40 @@ func main() {
 
 	parent, base := filepath.Dir(inputPath), filepath.Base(inputPath)
 
-	if available["zip"] && available["unzip"] {
-		bench := func(a, i, o string) (time.Duration, time.Duration, int64, error) {
-			return benchmarkExternal(a, i, o, parent,
-				func(a, _, _ string) []string { return []string{"zip", "-q", "-r", "-6", a, base} },
-				func(a, _, o string) []string { return []string{"unzip", "-q", a, "-d", o} })
-		}
-		if err := runRepeated("System ZIP", 1, *runs, originalSize, tempDir, inputPath, bench); err != nil {
-			panic(err)
-		}
-	}
+	// if available["zip"] && available["unzip"] {
+	// 	bench := func(a, i, o string) (time.Duration, time.Duration, int64, error) {
+	// 		return benchmarkExternal(a, i, o, parent,
+	// 			func(a, _, _ string) []string { return []string{"zip", "-q", "-r", "-6", a, base} },
+	// 			func(a, _, o string) []string { return []string{"unzip", "-q", a, "-d", o} })
+	// 	}
+	// 	if err := runRepeated("System ZIP", 1, *runs, originalSize, tempDir, inputPath, bench); err != nil {
+	// 		panic(err)
+	// 	}
+	// }
 
-	if available["7z"] {
-		for _, mode := range []struct {
-			name string
-			args []string
-		}{
-			{"7z Deflate", []string{"-tzip", "-mm=Deflate", "-mx=6", "-mmt=on"}},
-			{"7z LZMA2", []string{"-t7z", "-m0=lzma2", "-mx=5", "-mmt=on"}},
-		} {
-			mode := mode
-			bench := func(a, i, o string) (time.Duration, time.Duration, int64, error) {
-				return benchmarkExternal(a, i, o, parent,
-					func(a, _, _ string) []string {
-						args := []string{"7z", "a", "-y"}
-						args = append(args, mode.args...)
-						return append(args, a, base)
-					},
-					func(a, _, o string) []string { return []string{"7z", "x", "-y", "-o" + o, a} })
-			}
-			if err := runRepeated(mode.name, 1, *runs, originalSize, tempDir, inputPath, bench); err != nil {
-				panic(err)
-			}
-		}
-	}
+	// if available["7z"] {
+	// 	for _, mode := range []struct {
+	// 		name string
+	// 		args []string
+	// 	}{
+	// 		{"7z Deflate", []string{"-tzip", "-mm=Deflate", "-mx=6", "-mmt=on"}},
+	// 		{"7z LZMA2", []string{"-t7z", "-m0=lzma2", "-mx=5", "-mmt=on"}},
+	// 	} {
+	// 		mode := mode
+	// 		bench := func(a, i, o string) (time.Duration, time.Duration, int64, error) {
+	// 			return benchmarkExternal(a, i, o, parent,
+	// 				func(a, _, _ string) []string {
+	// 					args := []string{"7z", "a", "-y"}
+	// 					args = append(args, mode.args...)
+	// 					return append(args, a, base)
+	// 				},
+	// 				func(a, _, o string) []string { return []string{"7z", "x", "-y", "-o" + o, a} })
+	// 		}
+	// 		if err := runRepeated(mode.name, 1, *runs, originalSize, tempDir, inputPath, bench); err != nil {
+	// 			panic(err)
+	// 		}
+	// 	}
+	// }
 
 	if available["pigz"] && available["tar"] {
 		bench := func(a, _, o string) (time.Duration, time.Duration, int64, error) {
