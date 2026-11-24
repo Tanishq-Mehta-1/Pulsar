@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	archive "pulsar/internal"
@@ -10,11 +11,13 @@ import (
 
 type ArchiveInfo struct {
 	Path               string
+	Version            uint16
 	ArchiveSize        int64
 	OriginalSize       uint64
 	CompressedSize     uint64
 	FileCount          int
 	DirectoryCount     int
+	ChunkCount         int
 	CompressionMethods []string
 }
 
@@ -32,21 +35,46 @@ func getArchiveInfo(path string) (info ArchiveInfo, err error) {
 	}
 
 	info.Path = path
+	info.Version = reader.Version
 	info.ArchiveSize = stat.Size()
 
 	methods := make(map[archive.CompressionMethod]bool)
 
-	for _, entry := range reader.Files {
-		switch entry.Type {
-		case archive.File:
-			info.FileCount++
-			info.OriginalSize += entry.OriginalSize
-			info.CompressedSize += entry.CompressedSize
-			methods[entry.CompressionMethod] = true
+	switch reader.Version {
+	case 1:
+		for _, entry := range reader.Files {
+			switch entry.Type {
+			case archive.File:
+				info.FileCount++
+				info.OriginalSize += entry.OriginalSize
+				info.CompressedSize += entry.CompressedSize
+				methods[entry.CompressionMethod] = true
 
-		case archive.Directory:
-			info.DirectoryCount++
+			case archive.Directory:
+				info.DirectoryCount++
+			}
 		}
+
+	case 2:
+		for _, entry := range reader.FilesV2 {
+			switch entry.Type {
+			case archive.File:
+				info.FileCount++
+				info.OriginalSize += entry.OriginalSize
+
+			case archive.Directory:
+				info.DirectoryCount++
+			}
+		}
+
+		info.ChunkCount = len(reader.ChunksV2)
+		for _, chunk := range reader.ChunksV2 {
+			info.CompressedSize += chunk.CompressedSize
+			methods[chunk.CompressionMethod] = true
+		}
+
+	default:
+		return info, fmt.Errorf("INFO::unsupported archive version: %d", reader.Version)
 	}
 
 	for method := range methods {
@@ -55,6 +83,7 @@ func getArchiveInfo(path string) (info ArchiveInfo, err error) {
 			fmt.Sprint(method),
 		)
 	}
+	slices.Sort(info.CompressionMethods)
 
 	return info, nil
 }
@@ -64,6 +93,7 @@ func printArchiveInfo(info ArchiveInfo) {
 	fmt.Println(strings.Repeat("─", 38))
 
 	fmt.Printf("%-20s %s\n", "Archive:", info.Path)
+	fmt.Printf("%-20s v%d\n", "Format Version:", info.Version)
 	fmt.Printf("%-20s %s\n", "Archive Size:", formatSize(uint64(info.ArchiveSize)))
 	fmt.Printf("%-20s %s\n", "Original Size:", formatSize(info.OriginalSize))
 	fmt.Printf("%-20s %s\n", "Compressed Size:", formatSize(info.CompressedSize))
@@ -79,6 +109,9 @@ func printArchiveInfo(info ArchiveInfo) {
 	fmt.Printf("%-20s %d\n", "Files:", info.FileCount)
 	fmt.Printf("%-20s %d\n", "Directories:", info.DirectoryCount)
 	fmt.Printf("%-20s %d\n", "Total Entries:", info.FileCount+info.DirectoryCount)
+	if info.Version == 2 {
+		fmt.Printf("%-20s %d\n", "Chunks:", info.ChunkCount)
+	}
 
 	fmt.Println("\nCompression")
 	fmt.Println(strings.Repeat("─", 38))

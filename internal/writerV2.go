@@ -110,6 +110,10 @@ func (writer *ArchiveWriterV2) AddFilesConcurrent(
 		return fmt.Errorf("WRITERV2::worker count must be positive")
 	}
 
+	if len(files) <= 0 {
+		return nil
+	}
+
 	var wg sync.WaitGroup
 	errors := make(chan error, len(files))
 

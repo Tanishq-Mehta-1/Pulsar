@@ -14,7 +14,9 @@ type ArchiveWriterV1 struct {
 	Status     ObjStatus
 }
 
-func (writer *ArchiveWriterV1) CreateArchive(fileName string, outputDir string) error {
+func (writer *ArchiveWriterV1) CreateArchive(
+	fileName string,
+	outputDir string) error {
 
 	if writer.Status != Created {
 		return fmt.Errorf("WRITERV1::invalid ArchiveWriterV1 status %d", writer.Status)
@@ -82,7 +84,9 @@ func (writer *ArchiveWriterV1) CreateArchive(fileName string, outputDir string) 
 	return nil
 }
 
-func (writer *ArchiveWriterV1) AddFilesConcurrent(files []FileStruct, numWorkers int) error {
+func (writer *ArchiveWriterV1) AddFilesConcurrent(
+	files []FileStruct,
+	numWorkers int) error {
 
 	if writer.Status != Active {
 		return fmt.Errorf("WRITERV1::invalid ArchiveWriterV1 status %d", writer.Status)
@@ -90,6 +94,10 @@ func (writer *ArchiveWriterV1) AddFilesConcurrent(files []FileStruct, numWorkers
 
 	if numWorkers <= 0 {
 		return fmt.Errorf("WRITERV1::worker count must be positive")
+	}
+
+	if len(files) <= 0 {
+		return nil
 	}
 
 	jobs := make([]JobCompress, 0, len(files))
@@ -113,7 +121,9 @@ func (writer *ArchiveWriterV1) AddFilesConcurrent(files []FileStruct, numWorkers
 	return nil
 }
 
-func (writer *ArchiveWriterV1) AddDirectory(dirPath string, numWorkers int) error {
+func (writer *ArchiveWriterV1) AddDirectory(
+	dirPath string,
+	numWorkers int) error {
 
 	if !dirExists(dirPath) {
 		return fmt.Errorf("WRITERV1::error opening the directory")
