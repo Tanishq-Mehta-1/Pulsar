@@ -19,7 +19,7 @@ type ArchiveWriterV2 struct {
 }
 
 const MAXUINT32 uint32 = 4294967295
-const MAXCHUNKSIZE uint32 = 6.4e7
+const MAXCHUNKSIZE uint32 = 64 * 1024 * 1024
 
 func (writer *ArchiveWriterV2) CreateArchive(
 	fileName string,

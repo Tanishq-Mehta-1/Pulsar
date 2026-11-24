@@ -14,7 +14,42 @@ type TreeNode struct {
 	Children map[string]*TreeNode
 }
 
-func buildTree(entries []archive.FileEntry) *TreeNode {
+func buildTreeV2(entries []archive.FileEntryChunk) *TreeNode {
+	root := &TreeNode{
+		Name:     "",
+		IsDir:    true,
+		Children: make(map[string]*TreeNode),
+	}
+
+	for _, entry := range entries {
+		parts := strings.Split(filepath.ToSlash(entry.Filename), "/")
+
+		current := root
+		for i, part := range parts {
+			if part == "" {
+				continue
+			}
+
+			child, exists := current.Children[part]
+
+			if !exists {
+				child = &TreeNode{
+					Name:     part,
+					IsDir:    i < len(parts)-1 || entry.Type == archive.Directory,
+					Children: make(map[string]*TreeNode),
+				}
+
+				current.Children[part] = child
+			}
+
+			current = child
+		}
+	}
+
+	return root
+}
+
+func buildTreeV1(entries []archive.FileEntry) *TreeNode {
 	root := &TreeNode{
 		Name:     "",
 		IsDir:    true,
@@ -97,7 +132,13 @@ func list(path string) error {
 	// fmt.Println("Archive contents:")
 
 	//build the tree
-	tree := buildTree(reader.Files)
+	var tree *TreeNode
+
+	if reader.Version == 1 {
+		tree = buildTreeV1(reader.Files)
+	} else if reader.Version == 2 {
+		tree = buildTreeV2(reader.FilesV2)
+	}
 	printTree(tree, "")
 
 	return nil

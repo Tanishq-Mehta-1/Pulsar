@@ -170,14 +170,14 @@ func create(
 	}
 
 	if chunkSize <= 0 || chunkSize > archive.MAXCHUNKSIZE/KB {
-		return fmt.Errorf("CREATE::invalid chunk size: %d", chunkSize)
+		return fmt.Errorf("CREATE::invalid chunk-size: %d, must be in range [1, %d]", chunkSize, archive.MAXCHUNKSIZE/KB)
 	}
 
 	switch version {
 	case 1:
 		return createV1(path, files, dirs, outputDir, numWorkers)
 	case 2:
-		return createV2(path, files, dirs, outputDir, numWorkers, chunkSize)
+		return createV2(path, files, dirs, outputDir, numWorkers, chunkSize*KB)
 	default:
 		return fmt.Errorf("CREATE::invalid writer version")
 	}
