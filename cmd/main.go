@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	archive "pulsar/internal"
 	"strconv"
 )
 
@@ -48,7 +47,7 @@ func main() {
 		archivePath := arguments[1]
 
 		if err := list(archivePath); err != nil {
-			log.Fatal(fmt.Errorf("PLSR::LIST::%w", err))
+			log.Fatal(fmt.Errorf("PLSR::%w", err))
 		}
 
 	case "extract":
@@ -124,12 +123,13 @@ func main() {
 				takingFiles = false
 				var err error
 				chunkSize, err = strconv.Atoi(arguments[i+1])
-				if err != nil {
-					log.Fatal(fmt.Errorf("PLSR::CREATE::%w", err))
+
+				if chunkSize < 0 {
+					log.Fatal(fmt.Errorf("PLSR::CREATE::invalid chunk size: %d", chunkSize))
 				}
 
-				if chunkSize <= 0 {
-					log.Fatal(fmt.Errorf("PLSR::CREATE::invalid chunk-size: %d, must be in range [1, %d]", chunkSize, archive.MAXCHUNKSIZE/KB))
+				if err != nil {
+					log.Fatal(fmt.Errorf("PLSR::CREATE::%w", err))
 				}
 
 				i++
@@ -159,7 +159,7 @@ func main() {
 
 		info, err := getArchiveInfo(arguments[1])
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(fmt.Errorf("PLSR::%w", err))
 		}
 
 		printArchiveInfo(info)

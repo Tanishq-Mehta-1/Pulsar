@@ -38,9 +38,9 @@ func (writer *ArchiveWriterV2) CreateArchive(
 		fileName = "output"
 	}
 
-	if chunkSize > MAXCHUNKSIZE {
-		return fmt.Errorf("WRITERV2::chunk size of %d not in the valid range: [0, %d]", chunkSize, MAXCHUNKSIZE)
-	}
+	// if chunkSize > MAXCHUNKSIZE {
+	// 	return fmt.Errorf("WRITERV2::chunk size of %d not in the valid range: [0, %d]", chunkSize, MAXCHUNKSIZE)
+	// }
 
 	writer.ChunkSize = chunkSize
 
@@ -272,7 +272,7 @@ func (writer *ArchiveWriterV2) generateChunks(
 		var chunkCount uint32 = 0
 		var i int64
 
-		var chunkSize uint32 = writer.ChunkSize
+		chunkSize := writer.ChunkSize
 
 		if chunkSize == 0 {
 			err, chunkSize = calculateChunkSize(fileSize, numWorkers)

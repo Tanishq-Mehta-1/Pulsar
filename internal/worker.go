@@ -254,9 +254,10 @@ func ChunkCompressionWorker(
 	defer wg.Done()
 
 	for job := range jobs {
+
 		res, err := CompressChunk(job)
 		if job.Method != None || err != nil {
-			putChunkBuffer(res.Data)
+			putChunkBuffer(job.Data)
 		}
 
 		if err != nil {
@@ -361,19 +362,16 @@ func WriteArchiveV2(
 	for res := range results {
 
 		if firstErr != nil {
-			putChunkBuffer(res.Data)
 			continue
 		}
 
 		dataOffset, offErr := writer.OutputFile.Seek(0, io.SeekCurrent)
 		if offErr != nil {
-			putChunkBuffer(res.Data)
 			firstErr = offErr
 			continue
 		}
 
 		if err := writeChunk(writer, res, uint64(dataOffset)); err != nil {
-			putChunkBuffer(res.Data)
 			firstErr = err
 			continue
 		}
@@ -456,7 +454,10 @@ func StartChunkDecompressionPool(
 	return firstErr
 }
 
-func calculateChunkSize(size int64, workerCount int) (error, uint32) {
+func calculateChunkSize(
+	size int64,
+	workerCount int,
+) (error, uint32) {
 	target := size / int64(workerCount*2)
 
 	if target < 128*KB {

@@ -169,7 +169,7 @@ func create(
 		return fmt.Errorf("CREATE::number of workers must be positive")
 	}
 
-	if chunkSize <= 0 || chunkSize > archive.MAXCHUNKSIZE/KB {
+	if chunkSize > archive.MAXCHUNKSIZE/KB {
 		return fmt.Errorf("CREATE::invalid chunk-size: %d, must be in range [1, %d]", chunkSize, archive.MAXCHUNKSIZE/KB)
 	}
 

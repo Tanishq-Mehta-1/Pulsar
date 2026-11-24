@@ -284,7 +284,7 @@ func parseChunkSizes(raw string) ([]int, error) {
 			continue
 		}
 		val, err := strconv.Atoi(p)
-		if err != nil || val <= 0 {
+		if err != nil || val < 0 {
 			return nil, fmt.Errorf("invalid chunk size %q", p)
 		}
 		sizes = append(sizes, val)
