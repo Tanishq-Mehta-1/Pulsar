@@ -393,40 +393,40 @@ func main() {
 
 	parent, base := filepath.Dir(inputPath), filepath.Base(inputPath)
 
-	// if available["zip"] && available["unzip"] {
-	// 	bench := func(a, i, o string) (time.Duration, time.Duration, int64, error) {
-	// 		return benchmarkExternal(a, i, o, parent,
-	// 			func(a, _, _ string) []string { return []string{"zip", "-q", "-r", "-6", a, base} },
-	// 			func(a, _, o string) []string { return []string{"unzip", "-q", a, "-d", o} })
-	// 	}
-	// 	if err := runRepeated("System ZIP", 1, *runs, originalSize, tempDir, inputPath, bench); err != nil {
-	// 		panic(err)
-	// 	}
-	// }
+	if available["zip"] && available["unzip"] {
+		bench := func(a, i, o string) (time.Duration, time.Duration, int64, error) {
+			return benchmarkExternal(a, i, o, parent,
+				func(a, _, _ string) []string { return []string{"zip", "-q", "-r", "-6", a, base} },
+				func(a, _, o string) []string { return []string{"unzip", "-q", a, "-d", o} })
+		}
+		if err := runRepeated("System ZIP", 1, *runs, originalSize, tempDir, inputPath, bench); err != nil {
+			panic(err)
+		}
+	}
 
-	// if available["7z"] {
-	// 	for _, mode := range []struct {
-	// 		name string
-	// 		args []string
-	// 	}{
-	// 		{"7z Deflate", []string{"-tzip", "-mm=Deflate", "-mx=6", "-mmt=on"}},
-	// 		{"7z LZMA2", []string{"-t7z", "-m0=lzma2", "-mx=5", "-mmt=on"}},
-	// 	} {
-	// 		mode := mode
-	// 		bench := func(a, i, o string) (time.Duration, time.Duration, int64, error) {
-	// 			return benchmarkExternal(a, i, o, parent,
-	// 				func(a, _, _ string) []string {
-	// 					args := []string{"7z", "a", "-y"}
-	// 					args = append(args, mode.args...)
-	// 					return append(args, a, base)
-	// 				},
-	// 				func(a, _, o string) []string { return []string{"7z", "x", "-y", "-o" + o, a} })
-	// 		}
-	// 		if err := runRepeated(mode.name, 1, *runs, originalSize, tempDir, inputPath, bench); err != nil {
-	// 			panic(err)
-	// 		}
-	// 	}
-	// }
+	if available["7z"] {
+		for _, mode := range []struct {
+			name string
+			args []string
+		}{
+			{"7z Deflate", []string{"-tzip", "-mm=Deflate", "-mx=6", "-mmt=on"}},
+			{"7z LZMA2", []string{"-t7z", "-m0=lzma2", "-mx=5", "-mmt=on"}},
+		} {
+			mode := mode
+			bench := func(a, i, o string) (time.Duration, time.Duration, int64, error) {
+				return benchmarkExternal(a, i, o, parent,
+					func(a, _, _ string) []string {
+						args := []string{"7z", "a", "-y"}
+						args = append(args, mode.args...)
+						return append(args, a, base)
+					},
+					func(a, _, o string) []string { return []string{"7z", "x", "-y", "-o" + o, a} })
+			}
+			if err := runRepeated(mode.name, 1, *runs, originalSize, tempDir, inputPath, bench); err != nil {
+				panic(err)
+			}
+		}
+	}
 
 	if available["pigz"] && available["tar"] {
 		bench := func(a, _, o string) (time.Duration, time.Duration, int64, error) {
