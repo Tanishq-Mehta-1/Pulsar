@@ -52,3 +52,20 @@ System ZIP       1        6026.62      368.87       68.25        60.24        27
 7z LZMA2         1        3772.77      972.84       21.56        37.71        10.28        464.01      
 tar + pigz       0        6031.77      55.63        42.22        60.29        179.84       236.97      
 tar + zstd       0        5897.83      22.40        20.96        58.95        446.59       477.34  
+
+//testing chunking
+
+[deo3d2y@DEOs Pulsar]$ TMPDIR="$HOME/benchmark-tmp" go run ./benchmarks     -plsr ./plsr     -input ./testdata5GB/     -runs 3     -workers 16     -chunk-sizes 64,128,256,512,1024,2048,4096
+Dataset: /home/deo3d2y/Desktop/Dev/Pulsar/testdata5GB
+Original size: 5330.19 MB
+Runs: 3
+V2 Chunk sizes (KB): [64 128 256 512 1024 2048 4096]
+
+Format           Workers  Chunk KB  Archive MB   Compress s   Extract s    Ratio %      Comp MB/s    Extract MB/s
+PulsarV2-16      16       64        3459.63      31.72        14.82        64.91        168.04       359.65      
+PulsarV2-16      16       128       3410.49      24.15        15.01        63.98        220.70       355.17      
+PulsarV2-16      16       256       3383.66      23.56        17.64        63.48        226.28       302.12      
+PulsarV2-16      16       512       3369.20      18.43        14.86        63.21        289.26       358.69      
+PulsarV2-16      16       1024      3361.59      18.31        15.19        63.07        291.11       350.97      
+PulsarV2-16      16       2048      3357.66      17.27        16.18        62.99        308.72       329.42      
+PulsarV2-16      16       4096      3354.80      17.75        14.76        62.94        300.38       361.00 

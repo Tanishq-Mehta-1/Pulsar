@@ -94,7 +94,7 @@ func main() {
 		numWorkers := -1
 		outputDir := ""
 		version := 1
-		chunkSize := 1 //in KBs
+		chunkSize := 0 //default auto
 		takingFiles := true
 
 		for i, n := 2, len(arguments); i < n; i++ {
@@ -131,6 +131,7 @@ func main() {
 				if chunkSize <= 0 {
 					log.Fatal(fmt.Errorf("PLSR::CREATE::invalid chunk-size: %d, must be in range [1, %d]", chunkSize, archive.MAXCHUNKSIZE/KB))
 				}
+
 				i++
 			} else {
 				if !takingFiles {

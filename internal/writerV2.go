@@ -38,8 +38,8 @@ func (writer *ArchiveWriterV2) CreateArchive(
 		fileName = "output"
 	}
 
-	if chunkSize > MAXCHUNKSIZE || chunkSize < 1 {
-		return fmt.Errorf("WRITERV2::chunk size of %d not in the valid range: [1, %d]", chunkSize, MAXCHUNKSIZE)
+	if chunkSize > MAXCHUNKSIZE {
+		return fmt.Errorf("WRITERV2::chunk size of %d not in the valid range: [0, %d]", chunkSize, MAXCHUNKSIZE)
 	}
 
 	writer.ChunkSize = chunkSize
@@ -217,6 +217,7 @@ func (writer *ArchiveWriterV2) generateChunks(
 	metadata chan<- []FileEntryChunk,
 	errors chan<- error,
 	wg *sync.WaitGroup,
+	numWorkers int,
 ) {
 
 	defer wg.Done()
@@ -271,11 +272,24 @@ func (writer *ArchiveWriterV2) generateChunks(
 		var chunkCount uint32 = 0
 		var i int64
 
-		for i = 0; i < fileSize; i += int64(writer.ChunkSize) {
+		var chunkSize uint32 = writer.ChunkSize
 
-			var bufSize int = int(min(int64(writer.ChunkSize), fileSize-i))
-			buffer := make([]byte, bufSize)
+		if chunkSize == 0 {
+			err, chunkSize = calculateChunkSize(fileSize, numWorkers)
+			if err != nil {
+				f.Close()
+				errors <- fmt.Errorf("WRITERV2::%v", err)
+				continue
+			}
+		}
+
+		for i = 0; i < fileSize; i += int64(chunkSize) {
+
+			var bufSize int = int(min(int64(chunkSize), fileSize-i))
+			buffer := getChunkBuffer(bufSize)
 			if n, err := f.ReadAt(buffer, i); err != nil || n != bufSize {
+
+				putChunkBuffer(buffer)
 
 				success = false
 				f.Close()

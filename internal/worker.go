@@ -8,6 +8,8 @@ import (
 	"sync"
 )
 
+const KB = 1024
+
 const queueCapacity int = 100 //arbitrary rn
 
 func appendResult(
@@ -253,6 +255,10 @@ func ChunkCompressionWorker(
 
 	for job := range jobs {
 		res, err := CompressChunk(job)
+		if job.Method != None || err != nil {
+			putChunkBuffer(res.Data)
+		}
+
 		if err != nil {
 			fmt.Println("error while compressing chunk:", err)
 			errors <- err
@@ -279,7 +285,7 @@ func StartChunkCompressionPool(
 
 	//start job chunker
 	wg.Add(1)
-	go writer.generateChunks(files, jobs, fileEntryMetadata, errors, &wg)
+	go writer.generateChunks(files, jobs, fileEntryMetadata, errors, &wg, workerCount)
 
 	for range workerCount {
 		wg.Add(1)
@@ -355,18 +361,25 @@ func WriteArchiveV2(
 	for res := range results {
 
 		if firstErr != nil {
+			putChunkBuffer(res.Data)
 			continue
 		}
 
 		dataOffset, offErr := writer.OutputFile.Seek(0, io.SeekCurrent)
 		if offErr != nil {
+			putChunkBuffer(res.Data)
 			firstErr = offErr
 			continue
 		}
 
 		if err := writeChunk(writer, res, uint64(dataOffset)); err != nil {
+			putChunkBuffer(res.Data)
 			firstErr = err
 			continue
+		}
+
+		if res.CompressionMethod == None {
+			putChunkBuffer(res.Data)
 		}
 
 		chunkEntry := ChunkEntry{
@@ -441,4 +454,24 @@ func StartChunkDecompressionPool(
 	}
 
 	return firstErr
+}
+
+func calculateChunkSize(size int64, workerCount int) (error, uint32) {
+	target := size / int64(workerCount*2)
+
+	if target < 128*KB {
+		return nil, 64 * KB
+	} else if target >= 128*KB && target < 256*KB {
+		return nil, 128 * KB
+	} else if target >= 256*KB && target < 512*KB {
+		return nil, 256 * KB
+	} else if target >= 512*KB && target < 1024*KB {
+		return nil, 512 * KB
+	} else if target >= 1024*KB && target < 2048*KB {
+		return nil, 1024 * KB
+	} else if target >= 2048*KB && target < 4096*KB {
+		return nil, 2048 * KB
+	} else {
+		return nil, 4096 * KB
+	}
 }
