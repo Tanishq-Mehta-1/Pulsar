@@ -19,7 +19,7 @@ type ArchiveWriterV2 struct {
 }
 
 const MAXUINT32 uint32 = 4294967295
-const MAXCHUNKSIZE uint32 = 64 * 1024 * 1024
+const MAXCHUNKSIZE uint32 = 4096 * KB
 
 func (writer *ArchiveWriterV2) CreateArchive(
 	fileName string,
@@ -38,9 +38,9 @@ func (writer *ArchiveWriterV2) CreateArchive(
 		fileName = "output"
 	}
 
-	// if chunkSize > MAXCHUNKSIZE {
-	// 	return fmt.Errorf("WRITERV2::chunk size of %d not in the valid range: [0, %d]", chunkSize, MAXCHUNKSIZE)
-	// }
+	if chunkSize > MAXCHUNKSIZE {
+		return fmt.Errorf("WRITERV2::chunk size of %d not in the valid range: [0, %d]", chunkSize, MAXCHUNKSIZE)
+	}
 
 	writer.ChunkSize = chunkSize
 
