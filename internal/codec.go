@@ -28,7 +28,11 @@ func ParseCodec(s string) (uint8, error) {
 
 var zstdEncoder = sync.Pool{
 	New: func() any {
-		writer, _ := zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1), zstd.WithEncoderLevel(zstd.SpeedDefault))
+		writer, _ := zstd.NewWriter(nil,
+			zstd.WithEncoderConcurrency(1),
+			zstd.WithEncoderLevel(zstd.SpeedDefault),
+			zstd.WithEncoderCRC(false),
+		)
 		return writer
 	},
 }

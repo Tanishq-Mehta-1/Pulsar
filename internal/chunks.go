@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const ChunkEntryLength int = 37
+const ChunkEntryLength int = 38
 
 type ChunkEntry struct {
 	FileID            uint32            //4 bytes
@@ -15,6 +15,7 @@ type ChunkEntry struct {
 	OriginalSize      uint64            //8 bytes
 	CompressedSize    uint64            //8 bytes
 	CompressionMethod CompressionMethod //1 byte
+	Codec             uint8             //1 byte
 	Checksum          uint32            //4 bytes
 }
 
@@ -119,7 +120,8 @@ func SerializeChunkEntry(entry *ChunkEntry) ([]byte, error) {
 	binary.BigEndian.PutUint64(buffer[16:24], entry.OriginalSize)
 	binary.BigEndian.PutUint64(buffer[24:32], entry.CompressedSize)
 	copy(buffer[32:33], []byte{(byte(entry.CompressionMethod))})
-	binary.BigEndian.PutUint32(buffer[33:37], entry.Checksum)
+	copy(buffer[33:34], []byte{(byte(entry.Codec))})
+	binary.BigEndian.PutUint32(buffer[34:38], entry.Checksum)
 
 	return buffer, nil
 }
@@ -135,13 +137,19 @@ func DeserializeChunkEntry(data []byte) (*ChunkEntry, int, error) {
 	originalSize := binary.BigEndian.Uint64(data[16:24])
 	compressedSize := binary.BigEndian.Uint64(data[24:32])
 	compressionMethod := CompressionMethod(data[32:33][0])
-	checksum := binary.BigEndian.Uint32(data[33:ChunkEntryLength])
+	codec := uint8(data[33:34][0])
+	checksum := binary.BigEndian.Uint32(data[34:ChunkEntryLength])
 
 	//validate compressionMethod
 	switch compressionMethod {
 	case None, Default, HuffmanOnly, BestSpeed, BestCompression:
 	default:
 		return nil, 0, errors.New("CHUNK::invalid compression method")
+	}
+
+	//get codec
+	if codec > 2 {
+		return nil, 0, fmt.Errorf("CHUNK::invalid codec: %d", codec)
 	}
 
 	return &ChunkEntry{
@@ -151,6 +159,7 @@ func DeserializeChunkEntry(data []byte) (*ChunkEntry, int, error) {
 		OriginalSize:      originalSize,
 		CompressedSize:    compressedSize,
 		CompressionMethod: compressionMethod,
+		Codec:             codec,
 		Checksum:          checksum,
 	}, ChunkEntryLength, nil
 }

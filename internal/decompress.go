@@ -20,7 +20,9 @@ type JobDecompressChunk struct {
 	Dstoffset int64
 }
 
-func DecompressFile(entry *FileEntry, section *io.SectionReader) error {
+func DecompressFile(
+	entry *FileEntry,
+	section *io.SectionReader) error {
 	if len(entry.Filename) > 255 {
 		return fmt.Errorf("DECOMPRESS::filename is too long for file: %s", entry.Filename)
 	}
@@ -83,32 +85,75 @@ func DecompressFile(entry *FileEntry, section *io.SectionReader) error {
 	return nil
 }
 
-func DecompressChunk(job JobDecompressChunk, archive *os.File) error {
-	sectionReader := io.NewSectionReader(archive, int64(job.Chunk.DataOffset), int64(job.Chunk.CompressedSize))
+func DecompressChunk(
+	job JobDecompressChunk,
+	archive *os.File) error {
 
 	var data []byte
 	var err error
+	sectionReader := io.NewSectionReader(archive, int64(job.Chunk.DataOffset), int64(job.Chunk.CompressedSize))
 
-	switch job.Chunk.CompressionMethod {
-	case None:
+	switch job.Chunk.Codec {
+	case CodecStored:
+		data = make([]byte, job.Chunk.CompressedSize)
+		n, err := archive.ReadAt(data, int64(job.Chunk.DataOffset))
+		if n != int(job.Chunk.CompressedSize) || err != nil {
+			if err != nil {
+				return err
+			}
 
-		data, err = io.ReadAll(sectionReader)
-		if err != nil {
-			return err
+			return fmt.Errorf("DECOMPRESS::Read %d bytes instead of %d", n, job.Chunk.CompressedSize)
 		}
 
-	case Default, BestCompression, BestSpeed, HuffmanOnly:
+	case CodecDeflate:
+		switch job.Chunk.CompressionMethod {
+		case None:
 
-		flateReader := flate.NewReader(sectionReader)
-		defer flateReader.Close()
+			data = make([]byte, job.Chunk.CompressedSize)
+			n, err := archive.ReadAt(data, int64(job.Chunk.DataOffset))
+			if n != int(job.Chunk.CompressedSize) || err != nil {
+				if err != nil {
+					return err
+				}
 
-		data, err = io.ReadAll(flateReader)
+				return fmt.Errorf("DECOMPRESS::Read %d bytes instead of %d", n, job.Chunk.CompressedSize)
+			}
+
+		case Default, BestCompression, BestSpeed, HuffmanOnly:
+
+			flateReader := flate.NewReader(sectionReader)
+			defer flateReader.Close()
+
+			data, err = io.ReadAll(flateReader)
+			if err != nil {
+				return err
+			}
+
+		default:
+			return fmt.Errorf("DECOMPRESS::invalid chunk compression method: %d, fileID: %d\n", job.Chunk.CompressionMethod, job.Chunk.FileID)
+		}
+	case CodecZstd:
+
+		dst := getChunkBuffer(int(job.Chunk.OriginalSize))
+		defer putChunkBuffer(dst)
+		src := getChunkBuffer(int(job.Chunk.CompressedSize))
+		defer putChunkBuffer(src)
+		n, err := archive.ReadAt(src, int64(job.Chunk.DataOffset))
+		if n != int(job.Chunk.CompressedSize) || err != nil {
+			if err != nil {
+				return err
+			}
+
+			return fmt.Errorf("DECOMPRESS::Read %d bytes instead of %d", n, job.Chunk.CompressedSize)
+		}
+
+		data, err = DecompressZstd(src, dst)
 		if err != nil {
 			return err
 		}
 
 	default:
-		return fmt.Errorf("DECOMPRESS::invalid chunk compression method: %d, fileID: %d\n", job.Chunk.CompressionMethod, job.Chunk.FileID)
+		return fmt.Errorf("DECOMPRESS::invalid codec: %d", job.Chunk.Codec)
 	}
 
 	if len(data) != int(job.Chunk.OriginalSize) {

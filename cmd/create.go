@@ -97,7 +97,8 @@ func createV2(
 	dirs []string,
 	outputDir string,
 	numWorkers int,
-	chunkSize uint32) (err error) {
+	chunkSize uint32,
+	codec_str string) (err error) {
 
 	writer := archive.ArchiveWriterV2{}
 	if err := writer.CreateArchive(path, outputDir, chunkSize); err != nil {
@@ -128,13 +129,18 @@ func createV2(
 		fileEntries[i] = archive.FileStruct{Path: file, Method: archive.Default}
 	}
 
-	if err := writer.AddFilesConcurrent(fileEntries, numWorkers); err != nil {
-		return fmt.Errorf("CREATE::%w", err)
+	codec, err := archive.ParseCodec(codec_str)
+	if err != nil {
+		return fmt.Errorf("CREATE::%v", err)
+	}
+
+	if err := writer.AddFilesConcurrent(fileEntries, numWorkers, codec); err != nil {
+		return fmt.Errorf("CREATE::%v", err)
 	}
 
 	for _, dir := range dirs {
-		if err := writer.AddDirectory(dir, numWorkers); err != nil {
-			return fmt.Errorf("CREATE::%w", err)
+		if err := writer.AddDirectory(dir, numWorkers, codec); err != nil {
+			return fmt.Errorf("CREATE::%v", err)
 		}
 	}
 
@@ -161,13 +167,14 @@ func create(
 	outputDir string,
 	version int,
 	numWorkers int,
-	chunkSize uint32) (err error) {
+	chunkSize uint32,
+	codec string) (err error) {
 
 	if numWorkers < 0 {
 		return fmt.Errorf("CREATE::invalid worker count")
 	} else if numWorkers == 0 {
 		numWorkers = archive.ResolveWorkers(numWorkers)
-		fmt.Printf("Workers assigned: %d", numWorkers)
+		// fmt.Printf("Workers assigned: %d", numWorkers)
 	}
 
 	if chunkSize > archive.MAXCHUNKSIZE/KB {
@@ -178,7 +185,7 @@ func create(
 	case 1:
 		return createV1(path, files, dirs, outputDir, numWorkers)
 	case 2:
-		return createV2(path, files, dirs, outputDir, numWorkers, chunkSize*KB)
+		return createV2(path, files, dirs, outputDir, numWorkers, chunkSize*KB, codec)
 	default:
 		return fmt.Errorf("CREATE::invalid writer version")
 	}

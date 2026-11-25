@@ -5,7 +5,7 @@ import "fmt"
 var commandDocs = map[string]string{
 	"create": `
 Usage:
-  plsr create <archive> <input...> [-o <directory>] [--workers N] [-v <1|2>] [--chunk-size <KB>]
+  plsr create <archive> <input...> [-o <directory>] [--workers N] [-v <1|2>] [--chunk-size <KB>] [--codec <zstd|deflate|stored>]
 
 Description:
   Create a new lossless archive from files and directories.
@@ -13,13 +13,15 @@ Description:
 
 Options:
   -o            Directory in which to create the archive (default: current directory)
-  --workers     Number of compression workers (default: 0, assigns number of cores ())
-  -v            Archive format version: 1 (file-level) or 2 (chunk-based) (default: logical or physical)
-  --chunk-size  Chunk size in KB for v2 archives (default: 4096, keep 0 for dynamic file chunking)
+  -v            Archive format version: 1 (file-level) or 2 (chunk-based) (default: 2)
+  --workers     Number of compression workers (default: 0, assigns number of cores)
+  --chunk-size  Chunk size in KB for v2 archives (default: 4096, 0 for dynamic file chunking)
+  --codec       Compression codec for v2 archives: zstd, deflate, or stored (default: zstd)
 
 Examples:
   plsr create backup.plsr ./project
-  plsr create backup.plsr ./project -v 2 --chunk-size 256 --workers 8
+  plsr create backup.plsr ./project -v 2 --codec zstd --chunk-size 4096 --workers 12
+  plsr create backup.plsr ./project -v 2 --codec deflate --chunk-size 256 --workers 8
   plsr create backup.plsr file1.txt file2.txt -o ./archives
 `,
 
@@ -28,12 +30,12 @@ Usage:
   plsr extract <archive> [-o <directory>] [--workers N]
 
 Description:
-  Extract files and directories from an archive (auto-detects v1/v2).
+  Extract files and directories from an archive (auto-detects v1/v2 and codec).
   Preserves nested directory structures and empty directories.
 
 Options:
   -o          Extraction destination (default: current directory)
-  --workers   Number of decompression workers (default: 0, assigns number of cores ())
+  --workers   Number of decompression workers (default: 0, assigns number of cores)
 
 Examples:
   plsr extract backup.plsr

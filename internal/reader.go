@@ -97,7 +97,7 @@ func (reader *ArchiveReader) OpenArchive(
 	path string) error {
 
 	if reader.Status != Created {
-		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
+		return fmt.Errorf("READER::invalid ArchiveReader status %d", reader.Status)
 	}
 
 	if filepath.Ext(path) != ".plsr" {
@@ -128,7 +128,7 @@ func (reader *ArchiveReader) OpenArchive(
 
 	//lower bound
 	if outputFileInfo.Size() < int64(HeaderSize+FooterSizeV1) {
-		return fmt.Errorf("READER::selected archive is too small")
+		return fmt.Errorf("READER::selected archive size: %d is smaller than min size: %d", outputFileInfo.Size(), HeaderSize+FooterSizeV1)
 	}
 
 	//read header
@@ -270,7 +270,7 @@ func (reader *ArchiveReader) OpenArchive(
 			uint64(archiveFooter.ChunkCount)*uint64(ChunkEntryLength)
 
 		if archiveFooter.DirectorySize < minSize {
-			return errors.New("READER::directory too small for declared entry counts")
+			return fmt.Errorf("READER::directory size: %d smaller than minSize: %d", archiveFooter.DirectorySize, minSize)
 		}
 
 		size := uint64(outputFileInfo.Size())
@@ -521,6 +521,10 @@ func (reader *ArchiveReader) ExtractAllConcurrent(
 		return fmt.Errorf("READER::invalid numWorkers: %d", numWorkers)
 	}
 
+	if outputDir == "" {
+		outputDir = "."
+	}
+
 	switch reader.Version {
 	case 1:
 		jobs := make([]JobDecompress, 0, len(reader.Files))
@@ -532,10 +536,6 @@ func (reader *ArchiveReader) ExtractAllConcurrent(
 
 			if !filepath.IsLocal(filepath.FromSlash(entry.Filename)) {
 				return fmt.Errorf("READER::invalid archive path: %s", entry.Filename)
-			}
-
-			if outputDir != "" {
-				newEntry.Filename = filepath.Join(outputDir, filepath.FromSlash(entry.Filename))
 			}
 
 			jobs = append(jobs, JobDecompress{Entry: newEntry})

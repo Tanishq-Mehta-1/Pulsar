@@ -256,7 +256,8 @@ func ChunkCompressionWorker(
 	for job := range jobs {
 
 		res, err := CompressChunk(job)
-		if job.Method != None || err != nil {
+
+		if (job.Method != None && res.Codec != CodecStored) || err != nil {
 			putChunkBuffer(job.Data)
 		}
 
@@ -274,6 +275,7 @@ func StartChunkCompressionPool(
 	files []FileStruct,
 	workerCount int,
 	writer *ArchiveWriterV2,
+	codec uint8,
 	errors chan error,
 ) (<-chan ChunkResult, <-chan []FileEntryChunk) {
 
@@ -286,7 +288,7 @@ func StartChunkCompressionPool(
 
 	//start job chunker
 	wg.Add(1)
-	go writer.generateChunks(files, jobs, fileEntryMetadata, errors, &wg, workerCount)
+	go writer.generateChunks(files, jobs, fileEntryMetadata, errors, codec, &wg, workerCount)
 
 	for range workerCount {
 		wg.Add(1)
@@ -387,6 +389,7 @@ func WriteArchiveV2(
 			OriginalSize:      res.OriginalSize,
 			CompressedSize:    res.CompressedSize,
 			CompressionMethod: res.CompressionMethod,
+			Codec:             res.Codec,
 			Checksum:          res.Checksum,
 		}
 

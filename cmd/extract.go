@@ -18,7 +18,11 @@ func extract(path string, dst string, numWorkers int) error {
 		return fmt.Errorf("EXTRACT::invalid worker count")
 	} else if numWorkers == 0 {
 		numWorkers = archive.ResolveWorkers(numWorkers)
-		fmt.Printf("Workers assigned: %d", numWorkers)
+		// fmt.Printf("Workers assigned: %d", numWorkers)
+	}
+
+	if dst == "" {
+
 	}
 
 	if err := reader.ExtractAllConcurrent(dst, numWorkers); err != nil {

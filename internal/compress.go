@@ -146,32 +146,64 @@ func CompressChunk(job ChunkJob) (ChunkResult, error) {
 		ChunkIndex:        job.ChunkIndex,
 		OriginalSize:      uint64(len(job.Data)),
 		CompressionMethod: job.Method,
+		Codec:             job.Codec,
 		Checksum:          crc32.ChecksumIEEE(job.Data),
 	}
 
-	if job.Method == None {
+	switch job.Codec {
+	case CodecStored:
 		result.Data = job.Data
 		result.CompressedSize = uint64(len(job.Data))
 		return result, nil
+
+	case CodecDeflate:
+
+		if job.Method == None {
+			result.Data = job.Data
+			result.CompressedSize = uint64(len(job.Data))
+			return result, nil
+		}
+
+		var buffer bytes.Buffer
+
+		compressor, err := flate.NewWriter(&buffer, int(job.Method))
+		if err != nil {
+			return ChunkResult{}, err
+		}
+
+		if _, err := compressor.Write(job.Data); err != nil {
+			return ChunkResult{}, err
+		}
+
+		if err := compressor.Close(); err != nil {
+			return ChunkResult{}, err
+		}
+
+		result.Data = buffer.Bytes()
+		result.CompressedSize = uint64(buffer.Len())
+
+	case CodecZstd:
+
+		dst := getChunkBuffer(int(result.OriginalSize))
+		compressed := CompressZstd(job.Data, dst)
+
+		result.Data = compressed
+		result.CompressedSize = uint64(len(compressed))
+		if result.CompressedSize >= result.OriginalSize {
+			putChunkBuffer(dst)
+		}
+
+	default:
+		return ChunkResult{}, fmt.Errorf("COMPRESS::invalid codec: %d", job.Codec)
 	}
 
-	var buffer bytes.Buffer
-
-	compressor, err := flate.NewWriter(&buffer, int(job.Method))
-	if err != nil {
-		return ChunkResult{}, err
+	//if compression made it bigger, store og
+	//could be true for already compressed formats (jpg, png, mp4, zip...)
+	if result.CompressedSize >= result.OriginalSize {
+		result.Codec = CodecStored
+		result.Data = job.Data
+		result.CompressedSize = result.OriginalSize
 	}
-
-	if _, err := compressor.Write(job.Data); err != nil {
-		return ChunkResult{}, err
-	}
-
-	if err := compressor.Close(); err != nil {
-		return ChunkResult{}, err
-	}
-
-	result.Data = buffer.Bytes()
-	result.CompressedSize = uint64(buffer.Len())
 
 	return result, nil
 }

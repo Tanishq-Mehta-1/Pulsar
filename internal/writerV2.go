@@ -100,7 +100,8 @@ func (writer *ArchiveWriterV2) CreateArchive(
 
 func (writer *ArchiveWriterV2) AddFilesConcurrent(
 	files []FileStruct,
-	numWorkers int) error {
+	numWorkers int,
+	codec uint8) error {
 
 	if writer.Status != Active {
 		return fmt.Errorf("WRITERV2::invalid ArchiveWriterV2 status %d", writer.Status)
@@ -117,7 +118,7 @@ func (writer *ArchiveWriterV2) AddFilesConcurrent(
 	var wg sync.WaitGroup
 	errors := make(chan error, len(files))
 
-	res, fileEntries := StartChunkCompressionPool(files, numWorkers, writer, errors)
+	res, fileEntries := StartChunkCompressionPool(files, numWorkers, writer, codec, errors)
 
 	wg.Add(1)
 	go WriteArchiveV2(writer, res, &wg, errors)
@@ -155,7 +156,8 @@ func (writer *ArchiveWriterV2) AddFilesConcurrent(
 
 func (writer *ArchiveWriterV2) AddDirectory(
 	dirPath string,
-	numWorkers int) error {
+	numWorkers int,
+	codec uint8) error {
 
 	if !dirExists(dirPath) {
 		return fmt.Errorf("WRITERV2::error opening the directory")
@@ -203,7 +205,7 @@ func (writer *ArchiveWriterV2) AddDirectory(
 		return err
 	}
 
-	if err := writer.AddFilesConcurrent(files, numWorkers); err != nil {
+	if err := writer.AddFilesConcurrent(files, numWorkers, codec); err != nil {
 		return err
 	}
 
@@ -216,6 +218,7 @@ func (writer *ArchiveWriterV2) generateChunks(
 	jobs chan<- ChunkJob,
 	metadata chan<- []FileEntryChunk,
 	errors chan<- error,
+	codec uint8,
 	wg *sync.WaitGroup,
 	numWorkers int,
 ) {
@@ -306,6 +309,7 @@ func (writer *ArchiveWriterV2) generateChunks(
 				FileID:     uint32(fileId),
 				ChunkIndex: chunkCount,
 				Data:       buffer,
+				Codec:      codec,
 				Method:     file.Method,
 			}
 			chunkCount++

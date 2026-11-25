@@ -99,6 +99,7 @@ func main() {
 		outputDir := ""
 		version := 1
 		chunkSize := 4096 //default 4MB
+		codec := "deflate"
 		takingFiles := true
 
 		for i, n := 2, len(arguments); i < n; i++ {
@@ -129,6 +130,10 @@ func main() {
 					log.Fatal(fmt.Errorf("PLSR::CREATE::%w", err))
 				}
 				i++
+			} else if arg == "--codec" && i+1 < n {
+				takingFiles = false
+				codec = arguments[i+1]
+				i++
 			} else if arg == "--chunk-size" && i+1 < n {
 				takingFiles = false
 				var err error
@@ -156,7 +161,7 @@ func main() {
 			}
 		}
 
-		if err := create(archivePath, files, dirs, outputDir, version, numWorkers, uint32(chunkSize)); err != nil {
+		if err := create(archivePath, files, dirs, outputDir, version, numWorkers, uint32(chunkSize), codec); err != nil {
 			log.Fatal(fmt.Errorf("PLSR::%w", err))
 		}
 
