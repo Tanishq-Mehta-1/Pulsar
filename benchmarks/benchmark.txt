@@ -87,3 +87,90 @@ PulsarV2-12      12       8192      478.74       1.72         1.40         73.05
 PulsarV2-16      16       -         479.26       1.90         0.98         73.13        345.78       669.52      
 PulsarV2-16      16       4096      478.82       1.67         1.40         73.06        391.61       468.24      
 PulsarV2-16      16       8192      478.74       1.74         1.26         73.05        377.46       518.71
+
+//new benchmark
+Configuration                    Archive MB  Ratio %   Comp (s)   Comp MB/s   Ext (s)    Ext MB/s    Peak RSS 
+--------------------------------------------------------------------------------------------------------
+PulsarV1-deflate (4w)            478.66      73.04     4.22       155.40      2.94       222.77      17.5     
+PulsarV1-deflate (8w)            478.66      73.04     4.76       137.60      2.88       227.67      25.2     
+PulsarV1-deflate (12w)           478.66      73.04     4.84       135.36      2.21       296.22      33.8     
+PulsarV1-zstd (4w)               480.95      73.39     3.21       204.39      0.65       1015.92     87.7     
+PulsarV1-zstd (8w)               480.95      73.39     2.32       282.85      0.56       1176.93     160.1    
+PulsarV1-zstd (12w)              480.95      73.39     3.14       208.81      0.68       964.23      214.1    
+PulsarV2-deflate (1024KB, 4w)    479.57      73.18     2.91       224.91      1.85       353.98      245.8    
+PulsarV2-deflate (1024KB, 8w)    479.57      73.18     2.42       271.27      1.23       530.95      277.5    
+PulsarV2-deflate (1024KB, 12w)   479.57      73.18     2.68       244.28      1.14       572.84      219.0    
+PulsarV2-zstd (1024KB, 4w)       494.39      75.44     1.92       341.53      0.32       2071.70     342.6    
+PulsarV2-zstd (1024KB, 8w)       494.39      75.44     1.87       351.10      0.42       1556.80     546.7    
+PulsarV2-zstd (1024KB, 12w)      494.39      75.44     2.92       224.16      0.76       861.13      431.4    
+PulsarV2-deflate (4096KB, 4w)    478.82      73.06     3.33       196.56      1.69       388.05      860.9    
+PulsarV2-deflate (4096KB, 8w)    478.82      73.06     2.15       304.81      1.21       540.11      909.9    
+PulsarV2-deflate (4096KB, 12w)   478.82      73.06     2.43       269.44      1.08       607.11      490.5    
+PulsarV2-zstd (4096KB, 4w)       486.94      74.30     1.76       372.32      0.92       715.89      537.8    
+PulsarV2-zstd (4096KB, 8w)       486.94      74.30     2.26       290.27      0.81       811.41      583.4    
+PulsarV2-zstd (4096KB, 12w)      486.94      74.30     3.33       197.03      0.99       662.32      636.8    
+PulsarV2-deflate (8192KB, 4w)    478.74      73.05     9.28       70.63       1.83       358.17      913.7    
+PulsarV2-deflate (8192KB, 8w)    478.74      73.05     2.31       284.20      1.42       462.36      925.9    
+PulsarV2-deflate (8192KB, 12w)   478.74      73.05     2.44       268.60      1.28       510.79      909.4    
+PulsarV2-zstd (8192KB, 4w)       484.64      73.95     4.34       151.16      1.11       588.29      898.5    
+PulsarV2-zstd (8192KB, 8w)       484.64      73.95     2.50       262.24      0.67       973.13      862.7    
+PulsarV2-zstd (8192KB, 12w)      484.64      73.95     3.20       204.63      0.73       893.79      829.2    
+PulsarV2-deflate (dyn, 4w)       478.88      73.07     3.17       206.61      1.71       384.16      601.1    
+PulsarV2-deflate (dyn, 8w)       478.97      73.09     2.38       275.83      1.25       523.59      547.3    
+PulsarV2-deflate (dyn, 12w)      479.03      73.10     2.45       268.02      1.16       563.64      446.8    
+PulsarV2-zstd (dyn, 4w)          489.07      74.63     1.67       391.77      0.68       963.33      460.4    
+PulsarV2-zstd (dyn, 8w)          489.38      74.67     1.91       343.89      0.58       1132.18     638.7    
+PulsarV2-zstd (dyn, 12w)         489.52      74.70     2.47       265.38      0.47       1388.39     652.7    
+tar + zstd (-T0 -3)              473.40      72.24     1.33       492.63      0.82       801.42      147.5    
+tar + pigz (-6)                  462.09      70.51     4.09       160.23      2.53       258.92      12.0
+
+//5Gb test with pulsar zstd
+[deo3d2y@DEOs Pulsar]$ mkdir -p ~/benchmark-tmp && \
+TMPDIR="$HOME/benchmark-tmp" go run ./benchmarks -plsr ./plsr -input ./testdata5GB -runs 3 \
+  -versions 2 -codecs zstd -chunk-sizes 1024,2048,4096,8192 -workers 1,2,4,6 -baselines none && \
+TMPDIR="$HOME/benchmark-tmp" go run ./benchmarks -plsr ./plsr -input ./testdata5GB -runs 3 \
+  -versions 2 -codecs deflate -chunk-sizes 1024,2048,4096,8192 -workers 8,12,16 -baselines pigz,zstd
+
+Dataset: /home/deo3d2y/Desktop/Dev/Pulsar/testdata5GB
+Original size: 5330.19 MB
+Runs: 3
+V2 Chunk sizes (KB): [1024 2048 4096 8192]
+
+Format             Workers  Chunk KB  Archive MB   Compress s   Extract s    Ratio %      Comp MB/s    Extract MB/s
+PulsarV2-zstd      1        1024      3386.39      31.06        12.13        63.53        171.60       439.25      
+PulsarV2-zstd      2        1024      3386.39      17.36        8.79         63.53        307.01       606.21      
+PulsarV2-zstd      4        1024      3386.39      11.04        8.72         63.53        482.61       611.18      
+PulsarV2-zstd      6        1024      3386.39      10.61        9.13         63.53        502.50       583.74      
+PulsarV2-zstd      1        2048      3345.49      28.66        12.38        62.77        185.98       430.40      
+PulsarV2-zstd      2        2048      3345.49      16.29        9.98         62.77        327.28       534.08      
+PulsarV2-zstd      4        2048      3345.49      10.03        9.63         62.77        531.43       553.40      
+PulsarV2-zstd      6        2048      3345.49      10.01        9.40         62.77        532.41       566.98      
+PulsarV2-zstd      1        4096      3296.44      27.49        11.90        61.84        193.90       447.90      
+PulsarV2-zstd      2        4096      3296.44      15.39        9.61         61.84        346.33       554.41      
+PulsarV2-zstd      4        4096      3296.44      10.63        9.03         61.84        501.40       590.23      
+PulsarV2-zstd      6        4096      3296.44      10.86        9.06         61.84        490.66       588.55      
+PulsarV2-zstd      1        8192      3253.97      28.10        13.51        61.05        189.66       394.61      
+PulsarV2-zstd      2        8192      3253.97      15.91        11.66        61.05        335.07       457.05      
+PulsarV2-zstd      4        8192      3253.97      10.74        10.02        61.05        496.17       531.99      
+PulsarV2-zstd      6        8192      3253.97      11.33        9.68         61.05        470.40       550.49      
+
+Dataset: /home/deo3d2y/Desktop/Dev/Pulsar/testdata5GB
+Original size: 5330.19 MB
+Runs: 3
+V2 Chunk sizes (KB): [1024 2048 4096 8192]
+
+Format             Workers  Chunk KB  Archive MB   Compress s   Extract s    Ratio %      Comp MB/s    Extract MB/s
+PulsarV2-deflate   8        1024      3361.55      14.37        13.35        63.07        370.97       399.25      
+PulsarV2-deflate   12       1024      3361.55      14.47        12.77        63.07        368.33       417.25      
+PulsarV2-deflate   16       1024      3361.55      14.58        12.67        63.07        365.48       420.79      
+PulsarV2-deflate   8        2048      3357.63      14.00        14.74        62.99        380.75       361.59      
+PulsarV2-deflate   12       2048      3357.63      13.90        13.94        62.99        383.35       382.38      
+PulsarV2-deflate   16       2048      3357.63      14.01        13.95        62.99        380.41       382.04      
+PulsarV2-deflate   8        4096      3354.78      13.49        14.33        62.94        395.03       371.98      
+PulsarV2-deflate   12       4096      3354.78      13.26        13.61        62.94        401.93       391.65      
+PulsarV2-deflate   16       4096      3354.78      13.75        13.43        62.94        387.55       396.97      
+PulsarV2-deflate   8        8192      3352.94      13.60        14.16        62.90        391.86       376.30      
+PulsarV2-deflate   12       8192      3352.94      12.99        13.03        62.90        410.32       409.11      
+PulsarV2-deflate   16       8192      3352.94      13.44        13.28        62.90        396.56       401.23      
+tar + pigz         Auto     -         3246.94      28.72        20.83        60.92        185.57       255.84      
+tar + zstd         Auto     -         3186.66      10.52        10.23        59.79        506.87       521.16   
