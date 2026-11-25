@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -182,7 +183,11 @@ func DecompressionWorker(
 	for job := range jobs {
 
 		if job.Entry.Type == Directory {
-			if err := os.MkdirAll(job.Entry.Filename, 0755); err != nil {
+			targetDir := filepath.FromSlash(job.Entry.Filename)
+			if job.OutputDir != "" {
+				targetDir = filepath.Join(job.OutputDir, targetDir)
+			}
+			if err := os.MkdirAll(targetDir, 0755); err != nil {
 				fmt.Println("Decompression error:", err)
 				errors <- err
 			}
@@ -197,7 +202,7 @@ func DecompressionWorker(
 
 		// fmt.Println("Decompressing:", job.Entry.Filename)
 
-		if err := DecompressFile(&entry, section); err != nil {
+		if err := DecompressFile(&entry, section, job.OutputDir); err != nil {
 			fmt.Println("Decompression error:", err)
 			errors <- err
 		}

@@ -104,7 +104,7 @@ func (writer *ArchiveWriterV1) AddFilesConcurrent(
 	for _, file := range files {
 
 		switch file.Method {
-		case None, BestCompression, BestSpeed, Default, HuffmanOnly:
+		case None, BestCompression, BestSpeed, Default, HuffmanOnly, Zstd:
 		default:
 			return fmt.Errorf("WRITERV1::incorrect compression method: %d", file.Method)
 		}
@@ -123,7 +123,13 @@ func (writer *ArchiveWriterV1) AddFilesConcurrent(
 
 func (writer *ArchiveWriterV1) AddDirectory(
 	dirPath string,
-	numWorkers int) error {
+	numWorkers int,
+	method ...CompressionMethod) error {
+
+	dirMethod := Default
+	if len(method) > 0 {
+		dirMethod = method[0]
+	}
 
 	if !dirExists(dirPath) {
 		return fmt.Errorf("WRITERV1::error opening the directory")
@@ -163,7 +169,7 @@ func (writer *ArchiveWriterV1) AddDirectory(
 		files = append(files, FileStruct{
 			Path:        path,
 			ArchivePath: relPath,
-			Method:      Default})
+			Method:      dirMethod})
 
 		return nil
 

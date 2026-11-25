@@ -30,12 +30,35 @@ func processArg(
 	return files, dirs, nil
 }
 
+func v1MethodFromCodec(codecStr string) (archive.CompressionMethod, error) {
+	codec, err := archive.ParseCodec(codecStr)
+	if err != nil {
+		return archive.Default, err
+	}
+	switch codec {
+	case archive.CodecStored:
+		return archive.None, nil
+	case archive.CodecDeflate:
+		return archive.Default, nil
+	case archive.CodecZstd:
+		return archive.Zstd, nil
+	default:
+		return archive.Default, fmt.Errorf("unsupported codec: %s", codecStr)
+	}
+}
+
 func createV1(
 	path string,
 	files []string,
 	dirs []string,
 	outputDir string,
-	numWorkers int) (err error) {
+	numWorkers int,
+	codecStr string) (err error) {
+	method, err := v1MethodFromCodec(codecStr)
+	if err != nil {
+		return fmt.Errorf("CREATE::%w", err)
+	}
+
 	writer := archive.ArchiveWriterV1{}
 	if err := writer.CreateArchive(path, outputDir); err != nil {
 		return fmt.Errorf("CREATE::%w", err)
@@ -62,7 +85,7 @@ func createV1(
 	fileEntries := make([]archive.FileStruct, len(files))
 
 	for i, file := range files {
-		fileEntries[i] = archive.FileStruct{Path: file, Method: archive.Default}
+		fileEntries[i] = archive.FileStruct{Path: file, Method: method}
 	}
 
 	if err := writer.AddFilesConcurrent(fileEntries, numWorkers); err != nil {
@@ -70,7 +93,7 @@ func createV1(
 	}
 
 	for _, dir := range dirs {
-		if err := writer.AddDirectory(dir, numWorkers); err != nil {
+		if err := writer.AddDirectory(dir, numWorkers, method); err != nil {
 			return fmt.Errorf("CREATE::%w", err)
 		}
 	}
@@ -183,7 +206,7 @@ func create(
 
 	switch version {
 	case 1:
-		return createV1(path, files, dirs, outputDir, numWorkers)
+		return createV1(path, files, dirs, outputDir, numWorkers, codec)
 	case 2:
 		return createV2(path, files, dirs, outputDir, numWorkers, chunkSize*KB, codec)
 	default:

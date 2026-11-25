@@ -225,7 +225,7 @@ func (reader *ArchiveReader) OpenArchive(
 				}
 
 				switch fileEntry.CompressionMethod {
-				case None, BestCompression, BestSpeed, HuffmanOnly, Default:
+				case None, BestCompression, BestSpeed, HuffmanOnly, Default, Zstd:
 				default:
 					return fmt.Errorf("READER::incorrect compression method")
 				}
@@ -538,7 +538,7 @@ func (reader *ArchiveReader) ExtractAllConcurrent(
 				return fmt.Errorf("READER::invalid archive path: %s", entry.Filename)
 			}
 
-			jobs = append(jobs, JobDecompress{Entry: newEntry})
+			jobs = append(jobs, JobDecompress{Entry: newEntry, OutputDir: outputDir})
 		}
 
 		return StartDecompressionPool(jobs, reader, numWorkers)

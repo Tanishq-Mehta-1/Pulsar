@@ -11,7 +11,8 @@ import (
 )
 
 type JobDecompress struct {
-	Entry FileEntry
+	Entry     FileEntry
+	OutputDir string
 }
 
 type JobDecompressChunk struct {
@@ -22,17 +23,23 @@ type JobDecompressChunk struct {
 
 func DecompressFile(
 	entry *FileEntry,
-	section *io.SectionReader) error {
+	section *io.SectionReader,
+	outputDir ...string) error {
 	if len(entry.Filename) > 255 {
 		return fmt.Errorf("DECOMPRESS::filename is too long for file: %s", entry.Filename)
 	}
 
-	dir := filepath.Dir(entry.Filename)
+	targetPath := filepath.FromSlash(entry.Filename)
+	if len(outputDir) > 0 && outputDir[0] != "" {
+		targetPath = filepath.Join(outputDir[0], targetPath)
+	}
+
+	dir := filepath.Dir(targetPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
-	dst, err := os.Create(entry.Filename)
+	dst, err := os.Create(targetPath)
 	if err != nil {
 		return err
 	}
@@ -65,6 +72,12 @@ func DecompressFile(
 		defer flateReader.Close()
 
 		n, err = io.Copy(mw, flateReader)
+		if err != nil {
+			return err
+		}
+
+	case Zstd:
+		n, err = DecompressZstdStream(mw, section)
 		if err != nil {
 			return err
 		}

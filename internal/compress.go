@@ -106,6 +106,17 @@ func CompressFile(job JobCompress) (res ResultCompress) {
 			res.Err = fmt.Errorf("COMPRESS::read %d bytes instead of %d", n, res.OriginalSize)
 			return
 		}
+	case Zstd:
+		n, copyErr := CompressZstdStream(counter, file, hasher)
+		if copyErr != nil || n != int64(res.OriginalSize) {
+			if copyErr != nil {
+				res.Err = copyErr
+				return
+			}
+
+			res.Err = fmt.Errorf("COMPRESS::read %d bytes instead of %d", n, res.OriginalSize)
+			return
+		}
 	default:
 		flateWriter, err := flate.NewWriter(counter, int(job.CompressionMethod))
 		if err != nil {
