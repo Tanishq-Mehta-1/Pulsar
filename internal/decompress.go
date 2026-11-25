@@ -14,7 +14,13 @@ type JobDecompress struct {
 	Entry FileEntry
 }
 
-func DecompressFile(entry *FileEntry, section *io.SectionReader) (err error) {
+type JobDecompressChunk struct {
+	Chunk     ChunkEntry
+	DstFile   *os.File
+	Dstoffset int64
+}
+
+func DecompressFile(entry *FileEntry, section *io.SectionReader) error {
 	if len(entry.Filename) > 255 {
 		return fmt.Errorf("DECOMPRESS::filename is too long for file: %s", entry.Filename)
 	}
@@ -34,7 +40,7 @@ func DecompressFile(entry *FileEntry, section *io.SectionReader) (err error) {
 	success := false
 	defer func() {
 		if !success {
-			if rmErr := os.Remove(dst.Name()); err != nil {
+			if rmErr := os.Remove(dst.Name()); rmErr != nil {
 				err = errors.Join(err, fmt.Errorf("DECOMPRESS::error deleting file: %s after failed extraction", dst.Name()), rmErr)
 			}
 		}
@@ -74,5 +80,53 @@ func DecompressFile(entry *FileEntry, section *io.SectionReader) (err error) {
 	}
 
 	success = true
+	return nil
+}
+
+func DecompressChunk(job JobDecompressChunk, archive *os.File) error {
+	sectionReader := io.NewSectionReader(archive, int64(job.Chunk.DataOffset), int64(job.Chunk.CompressedSize))
+
+	var data []byte
+	var err error
+
+	switch job.Chunk.CompressionMethod {
+	case None:
+
+		data, err = io.ReadAll(sectionReader)
+		if err != nil {
+			return err
+		}
+
+	case Default, BestCompression, BestSpeed, HuffmanOnly:
+
+		flateReader := flate.NewReader(sectionReader)
+		defer flateReader.Close()
+
+		data, err = io.ReadAll(flateReader)
+		if err != nil {
+			return err
+		}
+
+	default:
+		return fmt.Errorf("DECOMPRESS::invalid chunk compression method: %d, fileID: %d\n", job.Chunk.CompressionMethod, job.Chunk.FileID)
+	}
+
+	if len(data) != int(job.Chunk.OriginalSize) {
+		return fmt.Errorf("DECOMPRESS::invalid uncompressed size of %d, original size: %d", len(data), job.Chunk.OriginalSize)
+	}
+
+	if crc32.ChecksumIEEE(data) != job.Chunk.Checksum {
+		return fmt.Errorf("DECOMPRESS::invalid checksum for ChunkID: %d, FileID: %d", job.Chunk.ChunkIndex, job.Chunk.FileID)
+	}
+
+	n, err := job.DstFile.WriteAt(data, job.Dstoffset)
+	if err != nil {
+		return fmt.Errorf("DECOMPRESS::%v", err)
+	}
+
+	if uint64(n) != job.Chunk.OriginalSize {
+		return fmt.Errorf("DECOMPRESS::wrote %d bytes instead of %d", n, job.Chunk.OriginalSize)
+	}
+
 	return nil
 }

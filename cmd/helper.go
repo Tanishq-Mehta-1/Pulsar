@@ -5,22 +5,22 @@ import "fmt"
 var commandDocs = map[string]string{
 	"create": `
 Usage:
-  plsr create <archive> <input...> [-o <directory>] [--workers N]
+  plsr create <archive> <input...> [-o <directory>] [--workers N] [-v <1|2>] [--chunk-size <KB>]
 
 Description:
   Create a new lossless archive from files and directories.
   Supports multiple input files and directories, preserving directory structure.
 
 Options:
-  -o          Directory in which to create the archive (default: current directory)
-  --workers   Number of compression workers (default: 8)
+  -o            Directory in which to create the archive (default: current directory)
+  --workers     Number of compression workers (default: 8)
+  -v            Archive format version: 1 (file-level) or 2 (chunk-based) (default: 1)
+  --chunk-size  Chunk size in KB for v2 archives (default: 0, automatically decides chunk-size)
 
 Examples:
-  plsr create backup.fz ./project
-  plsr create backup.fz file1.txt file2.txt
-  plsr create backup.fz ./project ./notes.txt
-  plsr create backup.fz ./project --workers 8
-  plsr create backup.fz ./project -o ./archives
+  plsr create backup.plsr ./project
+  plsr create backup.plsr ./project -v 2 --chunk-size 256 --workers 8
+  plsr create backup.plsr file1.txt file2.txt -o ./archives
 `,
 
 	"extract": `
@@ -28,7 +28,7 @@ Usage:
   plsr extract <archive> [-o <directory>] [--workers N]
 
 Description:
-  Extract files and directories from an archive.
+  Extract files and directories from an archive (auto-detects v1/v2).
   Preserves nested directory structures and empty directories.
 
 Options:
@@ -36,9 +36,9 @@ Options:
   --workers   Number of decompression workers (default: 8)
 
 Examples:
-  plsr extract backup.fz
-  plsr extract backup.fz -o ./output
-  plsr extract backup.fz --workers 8
+  plsr extract backup.plsr
+  plsr extract backup.plsr -o ./output
+  plsr extract backup.plsr --workers 8
 `,
 
 	"list": `
@@ -50,18 +50,19 @@ Description:
   Shows files, nested directories, and empty directories.
 
 Example:
-  plsr list backup.fz
-`, "info": `
+  plsr list backup.plsr
+`,
+
+	"info": `
 Usage:
   plsr info <archive>
 
 Description:
   Display metadata and statistics about an archive.
-  Shows archive size, original size, compressed size,
-  compression ratio, entry counts, and compression methods.
+  Shows format version, sizes, compression ratio, entry/chunk counts, and methods.
 
 Example:
-  plsr info backup.fz
+  plsr info backup.plsr
 `,
 }
 

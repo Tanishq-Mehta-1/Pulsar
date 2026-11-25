@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,6 +17,7 @@ import (
 type Result struct {
 	Name        string
 	Workers     int
+	ChunkKB     int
 	ArchiveSize int64
 	Compress    time.Duration
 	Extract     time.Duration
@@ -43,32 +45,37 @@ func requireTools(names ...string) map[string]bool {
 	}
 	return available
 }
-func runPulsar(binary, archivePath, input, output string, workers int) (time.Duration, time.Duration, int64, error) {
+
+func runPulsar(binary, archivePath, input, output string, workers, version, chunkSizeKB int) (time.Duration, time.Duration, int64, error) {
 	_ = os.Remove(archivePath)
 	_ = os.RemoveAll(output)
 
-	// Pulsar automatically appends .fz
 	archiveName := strings.TrimSuffix(
 		filepath.Base(archivePath),
 		filepath.Ext(archivePath),
 	)
 	actualArchivePath := filepath.Join(
 		filepath.Dir(archivePath),
-		archiveName+".fz",
+		archiveName+".plsr",
 	)
 
 	_ = os.Remove(actualArchivePath)
 	defer os.Remove(actualArchivePath)
 
-	start := time.Now()
-	cmd := exec.Command(
-		binary, "create", archiveName, input,
+	createArgs := []string{
+		"create", archiveName, input,
 		"-o", filepath.Dir(archivePath),
 		"--workers", fmt.Sprint(workers),
-	)
+		"-v", fmt.Sprint(version),
+	}
+	if version == 2 && chunkSizeKB > 0 {
+		createArgs = append(createArgs, "--chunk-size", fmt.Sprint(chunkSizeKB))
+	}
 
+	start := time.Now()
+	cmd := exec.Command(binary, createArgs...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return 0, 0, 0, fmt.Errorf("Pulsar create: %w\n%s", err, out)
+		return 0, 0, 0, fmt.Errorf("Pulsar v%d create: %w\n%s", version, err, out)
 	}
 	compressTime := time.Since(start)
 
@@ -82,9 +89,8 @@ func runPulsar(binary, archivePath, input, output string, workers int) (time.Dur
 		binary, "extract", actualArchivePath,
 		"-o", output, "--workers", fmt.Sprint(workers),
 	)
-
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return 0, 0, 0, fmt.Errorf("Pulsar extract: %w\n%s", err, out)
+		return 0, 0, 0, fmt.Errorf("Pulsar v%d extract: %w\n%s", version, err, out)
 	}
 
 	return compressTime, time.Since(start), info.Size(), nil
@@ -269,28 +275,54 @@ func totalSize(root string) (int64, error) {
 	return total, err
 }
 
+func parseChunkSizes(raw string) ([]int, error) {
+	parts := strings.Split(raw, ",")
+	sizes := make([]int, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		val, err := strconv.Atoi(p)
+		if err != nil || val < 0 {
+			return nil, fmt.Errorf("invalid chunk size %q", p)
+		}
+		sizes = append(sizes, val)
+	}
+	if len(sizes) == 0 {
+		return nil, fmt.Errorf("at least one chunk size is required")
+	}
+	return sizes, nil
+}
+
 func printResult(r Result, originalSize int64) {
 	ratio := float64(r.ArchiveSize) / float64(originalSize) * 100
 	compressSpeed := float64(originalSize) / r.Compress.Seconds() / (1024 * 1024)
 	extractSpeed := float64(originalSize) / r.Extract.Seconds() / (1024 * 1024)
-	fmt.Printf("%-15s %-8d %-12.2f %-12.2f %-12.2f %-12.2f %-12.2f %-12.2f\n",
-		r.Name, r.Workers,
+	chunkCol := "-"
+	if r.ChunkKB > 0 {
+		chunkCol = fmt.Sprintf("%d", r.ChunkKB)
+	}
+	fmt.Printf("%-16s %-8d %-9s %-12.2f %-12.2f %-12.2f %-12.2f %-12.2f %-12.2f\n",
+		r.Name, r.Workers, chunkCol,
 		float64(r.ArchiveSize)/(1024*1024),
 		r.Compress.Seconds(), r.Extract.Seconds(), ratio,
 		compressSpeed, extractSpeed)
 }
 
-func runRepeated(name string, workers int, runs int, originalSize int64,
+func runRepeated(name string, workers int, chunkKB int, runs int, originalSize int64,
 	tempDir, input string, benchmark Benchmark) (resultErr error) {
 	var compressTimes, extractTimes []time.Duration
 	var archiveSizes []int64
 
 	for run := 0; run < runs; run++ {
-		archivePath := filepath.Join(tempDir, fmt.Sprintf("bench-%s-%d.archive", strings.ReplaceAll(name, " ", "-"), run))
-		output := filepath.Join(tempDir, fmt.Sprintf("out-%s-%d", strings.ReplaceAll(name, " ", "-"), run))
+		runID := strings.ReplaceAll(name, " ", "-")
+		if chunkKB > 0 {
+			runID = fmt.Sprintf("%s-%dKB", runID, chunkKB)
+		}
+		archivePath := filepath.Join(tempDir, fmt.Sprintf("bench-%s-%d.archive", runID, run))
+		output := filepath.Join(tempDir, fmt.Sprintf("out-%s-%d", runID, run))
 
-		// Always remove benchmark artifacts, including when compression or
-		// extraction fails. The archive must remain until extraction finishes.
 		func() {
 			defer os.RemoveAll(output)
 			defer os.Remove(archivePath)
@@ -310,7 +342,7 @@ func runRepeated(name string, workers int, runs int, originalSize int64,
 	}
 
 	printResult(Result{
-		Name: name, Workers: workers,
+		Name: name, Workers: workers, ChunkKB: chunkKB,
 		ArchiveSize: medianInt64(archiveSizes),
 		Compress:    medianDuration(compressTimes),
 		Extract:     medianDuration(extractTimes),
@@ -322,12 +354,25 @@ func main() {
 	binary := flag.String("plsr", "./plsr", "Path to Pulsar executable")
 	input := flag.String("input", "", "Input directory to benchmark")
 	runs := flag.Int("runs", 3, "Number of benchmark repetitions")
+	chunkSize := flag.Int("chunk-size", 256, "Chunk size in KB for Pulsar V2")
+	chunkSizesFlag := flag.String("chunk-sizes", "", "Comma-separated chunk sizes in KB for Pulsar V2 (overrides -chunk-size)")
+	onlyWorkers := flag.Int("workers", 0, "If > 0, only benchmark Pulsar V2 at this worker count (skips V1 and baselines)")
 	flag.Parse()
 
-	if *input == "" || *runs <= 0 {
+	if *input == "" || *runs <= 0 || *chunkSize <= 0 || *onlyWorkers < 0 {
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	chunkSizes := []int{*chunkSize}
+	if *chunkSizesFlag != "" {
+		var err error
+		chunkSizes, err = parseChunkSizes(*chunkSizesFlag)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	inputPath, err := filepath.Abs(*input)
 	if err != nil {
 		panic(err)
@@ -360,26 +405,50 @@ func main() {
 	}
 	defer os.RemoveAll(tempDir)
 
-	available := requireTools("zip", "unzip", "7z", "pigz", "zstd", "tar")
-	fmt.Printf("Dataset: %s\nOriginal size: %.2f MB\nRuns: %d\n\n",
-		inputPath, float64(originalSize)/(1024*1024), *runs)
-	fmt.Printf("%-15s %-8s %-12s %-12s %-12s %-12s %-12s %-12s\n",
-		"Format", "Workers", "Archive MB", "Compress s", "Extract s",
+	fmt.Printf("Dataset: %s\nOriginal size: %.2f MB\nRuns: %d\nV2 Chunk sizes (KB): %v\n\n",
+		inputPath, float64(originalSize)/(1024*1024), *runs, chunkSizes)
+	fmt.Printf("%-16s %-8s %-9s %-12s %-12s %-12s %-12s %-12s %-12s\n",
+		"Format", "Workers", "Chunk KB", "Archive MB", "Compress s", "Extract s",
 		"Ratio %", "Comp MB/s", "Extract MB/s")
 
-	pulsarBench := func(workers int) Benchmark {
+	pulsarBench := func(version, workers, cKB int) Benchmark {
 		return func(a, i, o string) (time.Duration, time.Duration, int64, error) {
-			return runPulsar(binaryPath, a, i, o, workers)
+			return runPulsar(binaryPath, a, i, o, workers, version, cKB)
 		}
 	}
+
+	if *onlyWorkers > 0 {
+		for _, cKB := range chunkSizes {
+			name := fmt.Sprintf("PulsarV2-%d", *onlyWorkers)
+			if err := runRepeated(name, *onlyWorkers, cKB, *runs,
+				originalSize, tempDir, inputPath, pulsarBench(2, *onlyWorkers, cKB)); err != nil {
+				panic(err)
+			}
+		}
+		return
+	}
+
+	available := requireTools("zip", "unzip", "7z", "pigz", "zstd", "tar")
+
 	for _, workers := range []int{1, 2, 4, 8, 16, 64} {
-		if err := runRepeated(fmt.Sprintf("Pulsar-%d", workers), workers, *runs,
-			originalSize, tempDir, inputPath, pulsarBench(workers)); err != nil {
+		name := fmt.Sprintf("PulsarV1-%d", workers)
+		if err := runRepeated(name, workers, 0, *runs,
+			originalSize, tempDir, inputPath, pulsarBench(1, workers, 0)); err != nil {
 			panic(err)
 		}
 	}
 
-	if err := runRepeated("Go ZIP", 1, *runs, originalSize, tempDir, inputPath,
+	for _, cKB := range chunkSizes {
+		for _, workers := range []int{1, 2, 4, 8, 16, 64} {
+			name := fmt.Sprintf("PulsarV2-%d", workers)
+			if err := runRepeated(name, workers, cKB, *runs,
+				originalSize, tempDir, inputPath, pulsarBench(2, workers, cKB)); err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	if err := runRepeated("Go ZIP", 1, 0, *runs, originalSize, tempDir, inputPath,
 		benchmarkGoZip); err != nil {
 		panic(err)
 	}
@@ -392,7 +461,7 @@ func main() {
 				func(a, _, _ string) []string { return []string{"zip", "-q", "-r", "-6", a, base} },
 				func(a, _, o string) []string { return []string{"unzip", "-q", a, "-d", o} })
 		}
-		if err := runRepeated("System ZIP", 1, *runs, originalSize, tempDir, inputPath, bench); err != nil {
+		if err := runRepeated("System ZIP", 1, 0, *runs, originalSize, tempDir, inputPath, bench); err != nil {
 			panic(err)
 		}
 	}
@@ -415,7 +484,7 @@ func main() {
 					},
 					func(a, _, o string) []string { return []string{"7z", "x", "-y", "-o" + o, a} })
 			}
-			if err := runRepeated(mode.name, 1, *runs, originalSize, tempDir, inputPath, bench); err != nil {
+			if err := runRepeated(mode.name, 1, 0, *runs, originalSize, tempDir, inputPath, bench); err != nil {
 				panic(err)
 			}
 		}
@@ -431,7 +500,7 @@ func main() {
 					return []string{"tar", "-I", "pigz -d", "-xf", a, "-C", o}
 				})
 		}
-		if err := runRepeated("tar + pigz", 0, *runs, originalSize, tempDir, inputPath, bench); err != nil {
+		if err := runRepeated("tar + pigz", 0, 0, *runs, originalSize, tempDir, inputPath, bench); err != nil {
 			panic(err)
 		}
 	}
@@ -446,7 +515,7 @@ func main() {
 					return []string{"tar", "-I", "zstd -d", "-xf", a, "-C", o}
 				})
 		}
-		if err := runRepeated("tar + zstd", 0, *runs, originalSize, tempDir, inputPath, bench); err != nil {
+		if err := runRepeated("tar + zstd", 0, 0, *runs, originalSize, tempDir, inputPath, bench); err != nil {
 			panic(err)
 		}
 	}

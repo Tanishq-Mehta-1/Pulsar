@@ -1,6 +1,7 @@
 package archive
 
 import (
+	"cmp"
 	"compress/flate"
 	"errors"
 	"fmt"
@@ -8,21 +9,98 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 type ArchiveReader struct {
 	OutputFile *os.File
 	Files      []FileEntry
+	FilesV2    []FileEntryChunk
+	ChunksV2   []ChunkEntry
+	Version    uint16
 	Status     ObjStatus
 }
 
-func (reader *ArchiveReader) OpenArchive(path string) error {
+func (reader *ArchiveReader) validateChunks() (bool, error) {
+	if reader.Version != 2 || reader.Status != Created {
+		return false, fmt.Errorf("READER::validating the wrong archive")
+	}
+
+	fileMap := make(map[uint32]int)
+	chunkCounter := make(map[uint32]uint32)
+	seenChunks := make(map[uint32]map[uint32]bool)
+	originalSize := make(map[uint32]uint64)
+
+	for id, file := range reader.FilesV2 {
+		if file.Type != File {
+			continue
+		}
+
+		fileMap[file.FileID] = id
+		chunkCounter[file.FileID] = 0
+		originalSize[file.FileID] = 0
+	}
+
+	for _, chunk := range reader.ChunksV2 {
+
+		fileId := chunk.FileID
+		fileIndex, ok := fileMap[fileId]
+		if !ok {
+			return false, fmt.Errorf("READER::chunk's FileID invalid")
+		}
+
+		if chunk.ChunkIndex >= reader.FilesV2[fileIndex].ChunkCount {
+			return false, fmt.Errorf("READER::invalid chunk index %d, Max chunk count of file: %d",
+				chunk.ChunkIndex,
+				reader.FilesV2[fileMap[fileId]].ChunkCount)
+		}
+
+		if seenChunks[fileId] == nil {
+			seenChunks[fileId] = make(map[uint32]bool)
+		}
+
+		if seenChunks[fileId][chunk.ChunkIndex] {
+			return false, fmt.Errorf(
+				"READER::duplicate chunk index %d for FileID %d",
+				chunk.ChunkIndex, fileId,
+			)
+		}
+
+		seenChunks[fileId][chunk.ChunkIndex] = true
+		chunkCounter[fileId]++
+		originalSize[fileId] += chunk.OriginalSize
+	}
+
+	for id, count := range chunkCounter {
+		file := reader.FilesV2[fileMap[id]]
+
+		if count != file.ChunkCount {
+			return false, fmt.Errorf(
+				"READER::mismatching chunk count for FileID: %d", id)
+		}
+
+		if originalSize[id] != file.OriginalSize {
+			return false, fmt.Errorf(
+				"READER::mismatching original size for FileID: %d", id)
+		}
+
+		if originalSize[id] == 0 && file.ChunkCount != 0 {
+			return false, fmt.Errorf(
+				"READER::empty file must not have chunks")
+		}
+	}
+
+	return true, nil
+}
+
+func (reader *ArchiveReader) OpenArchive(
+	path string) error {
 
 	if reader.Status != Created {
 		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
 	}
 
-	if filepath.Ext(path) != ".fz" {
+	if filepath.Ext(path) != ".plsr" {
 		return fmt.Errorf("READER::invalid archive extension")
 	}
 
@@ -36,7 +114,10 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	defer func() {
 		if !ok {
 			file.Close()
+			reader.Status = Failed
 			reader.Files = nil
+			reader.FilesV2 = nil
+			reader.ChunksV2 = nil
 		}
 	}()
 
@@ -45,7 +126,8 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 		return err
 	}
 
-	if outputFileInfo.Size() < int64(HeaderSize+FooterSize) {
+	//lower bound
+	if outputFileInfo.Size() < int64(HeaderSize+FooterSizeV1) {
 		return fmt.Errorf("READER::selected archive is too small")
 	}
 
@@ -61,111 +143,280 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 		return fmt.Errorf("READER::read %d bytes instead of %d", n, HeaderSize)
 	}
 
-	_, err = DeserializeHeader([12]byte(headerBuffer))
+	header, err := DeserializeHeader([12]byte(headerBuffer))
 	if err != nil {
 		return err
+	}
+
+	switch header.Version {
+	case 1:
+		reader.Version = 1
+
+		footerBuffer := make([]byte, FooterSizeV1)
+		n, err = file.ReadAt(footerBuffer, outputFileInfo.Size()-int64(FooterSizeV1))
+		if err != nil || n != FooterSizeV1 {
+			if err != nil {
+				return err
+			}
+
+			return fmt.Errorf("READER::read %d bytes instead of %d", n, FooterSizeV1)
+		}
+
+		archiveFooter, err := DeserializeFooterV1([24]byte(footerBuffer))
+		if err != nil {
+			return err
+		}
+
+		//validate footer
+		size := uint64(outputFileInfo.Size())
+		footerStart := size - uint64(FooterSizeV1)
+
+		if archiveFooter.DirectoryOffset < uint64(HeaderSize) ||
+			archiveFooter.DirectoryOffset > footerStart ||
+			archiveFooter.DirectorySize != footerStart-archiveFooter.DirectoryOffset {
+			return fmt.Errorf("READER::footer directory offset and size don't match archive size")
+		}
+
+		//read the directory
+		directoryData := make([]byte, archiveFooter.DirectorySize)
+		n, err = file.ReadAt(directoryData, int64(archiveFooter.DirectoryOffset))
+		if err != nil || n != int(archiveFooter.DirectorySize) {
+			if err != nil {
+				return err
+			}
+
+			return fmt.Errorf("READER::read %d bytes instead of %d", n, archiveFooter.DirectorySize)
+		}
+
+		//extract file entries
+		position := 0
+		filesRead := 0
+
+		for position < len(directoryData) {
+			fileEntry, bytesRead, err := DeserializeFileEntry(directoryData[position:])
+			if err != nil {
+
+				//undo changes
+				reader.Files = nil
+				return err
+			}
+			switch fileEntry.Type {
+
+			case Directory:
+				// Directory entries don't reference file data.
+				if fileEntry.DataOffset != 0 ||
+					fileEntry.CompressedSize != 0 ||
+					fileEntry.OriginalSize != 0 {
+					return fmt.Errorf("READER::invalid directory entry")
+				}
+
+			case File:
+				end := fileEntry.DataOffset + fileEntry.CompressedSize
+
+				if fileEntry.DataOffset < uint64(HeaderSize) ||
+					end < fileEntry.DataOffset ||
+					end > archiveFooter.DirectoryOffset {
+					return fmt.Errorf("READER::incorrect file entry data offset")
+				}
+
+				if fileEntry.CompressionMethod == None &&
+					fileEntry.OriginalSize != fileEntry.CompressedSize {
+					return fmt.Errorf("READER::incorrect compression for Method: NONE")
+				}
+
+				switch fileEntry.CompressionMethod {
+				case None, BestCompression, BestSpeed, HuffmanOnly, Default:
+				default:
+					return fmt.Errorf("READER::incorrect compression method")
+				}
+			}
+
+			reader.Files = append(reader.Files, *fileEntry)
+			position += bytesRead
+			filesRead++
+		}
+
+		if position != len(directoryData) {
+			//undo changes
+			reader.Files = nil
+			return errors.New("READER::error reading central directory")
+		}
+
+		if filesRead != int(archiveFooter.EntryCount) {
+			//undo changes
+			reader.Files = nil
+			return fmt.Errorf("READER::read %d files instead of %d", filesRead, archiveFooter.EntryCount)
+		}
+	case 2:
+		reader.Version = 2
+
+		footerBuffer := make([]byte, FooterSizeV2)
+		n, err = file.ReadAt(footerBuffer, outputFileInfo.Size()-int64(FooterSizeV2))
+		if err != nil || n != FooterSizeV2 {
+			if err != nil {
+				return err
+			}
+
+			return fmt.Errorf("READER::read %d bytes instead of %d", n, FooterSizeV2)
+		}
+
+		archiveFooter, err := DeserializeFooterV2([28]byte(footerBuffer))
+		if err != nil {
+			return err
+		}
+
+		//validate footer
+		minSize := uint64(archiveFooter.EntryCount)*uint64(FileEntryChunkLength) +
+			uint64(archiveFooter.ChunkCount)*uint64(ChunkEntryLength)
+
+		if archiveFooter.DirectorySize < minSize {
+			return errors.New("READER::directory too small for declared entry counts")
+		}
+
+		size := uint64(outputFileInfo.Size())
+		footerStart := size - uint64(FooterSizeV2)
+
+		if archiveFooter.DirectoryOffset < uint64(HeaderSize) ||
+			archiveFooter.DirectoryOffset > footerStart ||
+			archiveFooter.DirectorySize != footerStart-archiveFooter.DirectoryOffset {
+			return fmt.Errorf("READER::footer directory offset and size don't match archive size")
+		}
+
+		//read the directory
+		directoryData := make([]byte, archiveFooter.DirectorySize)
+		n, err = file.ReadAt(directoryData, int64(archiveFooter.DirectoryOffset))
+		if err != nil || n != int(archiveFooter.DirectorySize) {
+			if err != nil {
+				return err
+			}
+
+			return fmt.Errorf("READER::read %d bytes instead of %d", n, archiveFooter.DirectorySize)
+		}
+
+		//extract file entries
+		position := 0
+		filesRead := 0
+
+		idMap := make(map[uint32]bool)
+		seenPaths := make(map[string]bool)
+		for filesRead < int(archiveFooter.EntryCount) {
+
+			fileEntry, bytesRead, err := DeserializeFileEntryChunk(directoryData[position:])
+			if err != nil {
+
+				//undo changes
+				reader.FilesV2 = nil
+				return err
+			}
+
+			if fileEntry.FilenameLength == 0 ||
+				len(fileEntry.Filename) != int(fileEntry.FilenameLength) {
+				return fmt.Errorf("READER::invalid filename length")
+			}
+
+			if seenPaths[fileEntry.Filename] {
+				return fmt.Errorf(
+					"READER::duplicate archive path: %s",
+					fileEntry.Filename,
+				)
+			}
+
+			seenPaths[fileEntry.Filename] = true
+
+			switch fileEntry.Type {
+
+			case Directory:
+				// Directory entries don't reference file data.
+				if fileEntry.OriginalSize != 0 ||
+					fileEntry.ChunkCount != 0 ||
+					fileEntry.FileID != 0 {
+					return fmt.Errorf("READER::invalid directory entry")
+				}
+
+			case File:
+				if fileEntry.FileID == 0 {
+					return fmt.Errorf("READER::FileID 0 is reserved")
+				}
+
+				if _, ok := idMap[fileEntry.FileID]; ok {
+					return fmt.Errorf("READER::duplicate file id: %d", fileEntry.FileID)
+				}
+				idMap[fileEntry.FileID] = true
+
+			default:
+				return fmt.Errorf("READER::invalid fileEntry type")
+			}
+
+			reader.FilesV2 = append(reader.FilesV2, *fileEntry)
+			position += bytesRead
+			filesRead++
+		}
+
+		//extract chunk entries
+		chunksRead := 0
+
+		for chunksRead < int(archiveFooter.ChunkCount) {
+			chunkEntry, bytesRead, err := DeserializeChunkEntry(directoryData[position:])
+			if err != nil {
+				//undo changes
+				reader.ChunksV2 = nil
+				return err
+			}
+
+			end := chunkEntry.DataOffset + chunkEntry.CompressedSize
+
+			if chunkEntry.DataOffset < uint64(HeaderSize) ||
+				end < chunkEntry.DataOffset ||
+				end > archiveFooter.DirectoryOffset {
+				return fmt.Errorf("READER::invalid chunk data offset")
+			}
+
+			switch chunkEntry.CompressionMethod {
+			case HuffmanOnly, Default, BestCompression, BestSpeed, None:
+			default:
+				return fmt.Errorf("READER::invalid chunk compression method: %d", chunkEntry.CompressionMethod)
+			}
+
+			if chunkEntry.CompressionMethod == None && chunkEntry.OriginalSize != chunkEntry.CompressedSize {
+				return fmt.Errorf("READER::chunk with invalid [None] compression")
+			}
+
+			reader.ChunksV2 = append(reader.ChunksV2, *chunkEntry)
+
+			position += bytesRead
+			chunksRead++
+		}
+
+		if position != len(directoryData) {
+			//undo changes
+			reader.FilesV2 = nil
+			reader.ChunksV2 = nil
+			return errors.New("READER::error reading central directory")
+		}
+
+		if chunksRead != int(archiveFooter.ChunkCount) {
+			//undo changes
+			reader.FilesV2 = nil
+			reader.ChunksV2 = nil
+			return fmt.Errorf("READER::read %d chunks instead of %d", chunksRead, archiveFooter.ChunkCount)
+		}
+
+		if filesRead != int(archiveFooter.EntryCount) {
+			//undo changes
+			reader.FilesV2 = nil
+			reader.ChunksV2 = nil
+			return fmt.Errorf("READER::read %d files instead of %d", filesRead, archiveFooter.EntryCount)
+		}
+
+		if ok, err := reader.validateChunks(); !ok {
+			return fmt.Errorf("READER::invalid chunks in archive: %w", err)
+		}
+
+	default:
+		return fmt.Errorf("READER::invalid archive version: %d", header.Version)
 	}
 
 	//read footer
-	footerBuffer := make([]byte, FooterSize)
-	n, err = file.ReadAt(footerBuffer, outputFileInfo.Size()-int64(FooterSize))
-	if err != nil || n != FooterSize {
-		if err != nil {
-			return err
-		}
-
-		return fmt.Errorf("READER::read %d bytes instead of %d", n, FooterSize)
-	}
-
-	archiveFooter, err := DeserializeFooter([24]byte(footerBuffer))
-	if err != nil {
-		return err
-	}
-
-	//validate footer
-	size := uint64(outputFileInfo.Size())
-	if archiveFooter.DirectoryOffset < uint64(HeaderSize) ||
-		archiveFooter.DirectoryOffset > size || archiveFooter.DirectorySize > size ||
-		archiveFooter.DirectoryOffset+archiveFooter.DirectorySize+uint64(FooterSize) != size {
-		return fmt.Errorf("READER::footer directory offset and size don't match the archive's size")
-
-	}
-
-	// if archiveFooter.DirectoryOffset+archiveFooter.DirectorySize+uint64(FooterSize) != uint64(outputFileInfo.Size()) {
-	// 	return fmt.Errorf("READER::footer directory offset and size don't match the archive's size")
-	// }
-
-	//read the directory
-	directoryData := make([]byte, archiveFooter.DirectorySize)
-	n, err = file.ReadAt(directoryData, int64(archiveFooter.DirectoryOffset))
-	if err != nil || n != int(archiveFooter.DirectorySize) {
-		if err != nil {
-			return err
-		}
-
-		return fmt.Errorf("READER::read %d bytes instead of %d", n, archiveFooter.DirectorySize)
-	}
-
-	//extract file entries
-	position := 0
-	filesRead := 0
-
-	for position < len(directoryData) {
-		fileEntry, bytesRead, err := DeserializeFileEntry(directoryData[position:])
-		if err != nil {
-
-			//undo changes
-			reader.Files = nil
-			return err
-		}
-		switch fileEntry.Type {
-
-		case Directory:
-			// Directory entries don't reference file data.
-			if fileEntry.DataOffset != 0 ||
-				fileEntry.CompressedSize != 0 ||
-				fileEntry.OriginalSize != 0 {
-				return fmt.Errorf("READER::invalid directory entry")
-			}
-
-		case File:
-			end := fileEntry.DataOffset + fileEntry.CompressedSize
-
-			if fileEntry.DataOffset < uint64(HeaderSize) ||
-				end < fileEntry.DataOffset ||
-				end > archiveFooter.DirectoryOffset {
-				return fmt.Errorf("READER::incorrect file entry data offset")
-			}
-
-			if fileEntry.CompressionMethod == None &&
-				fileEntry.OriginalSize != fileEntry.CompressedSize {
-				return fmt.Errorf("READER::incorrect compression for Method: NONE")
-			}
-
-			switch fileEntry.CompressionMethod {
-			case None, BestCompression, BestSpeed, HuffmanOnly, Default:
-			default:
-				return fmt.Errorf("READER::incorrect compression method")
-			}
-		}
-
-		reader.Files = append(reader.Files, *fileEntry)
-		position += bytesRead
-		filesRead++
-	}
-
-	if position != len(directoryData) {
-		//undo changes
-		reader.Files = nil
-		return errors.New("READER::error reading central directory")
-	}
-
-	if filesRead != int(archiveFooter.EntryCount) {
-		//undo changes
-		reader.Files = nil
-		return fmt.Errorf("READER::read %d files instead of %d", filesRead, archiveFooter.EntryCount)
-	}
-
 	reader.OutputFile = file
 	reader.Status = Active
 	ok = true
@@ -173,7 +424,9 @@ func (reader *ArchiveReader) OpenArchive(path string) error {
 	return nil
 }
 
-func (reader *ArchiveReader) ExtractFile(fileName string, dst string) (err error) {
+func (reader *ArchiveReader) ExtractFile(
+	fileName string,
+	dst string) (err error) {
 
 	if reader.Status != Active {
 		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
@@ -208,7 +461,7 @@ func (reader *ArchiveReader) ExtractFile(fileName string, dst string) (err error
 
 	defer func() {
 		if !success {
-			if rmErr := os.Remove(dist.Name()); err != nil {
+			if rmErr := os.Remove(dist.Name()); rmErr != nil {
 				err = errors.Join(err, fmt.Errorf("READER::error deleting file: %s after failed extraction", dist.Name()), rmErr)
 				return
 			}
@@ -256,34 +509,140 @@ func (reader *ArchiveReader) ExtractFile(fileName string, dst string) (err error
 	return nil
 }
 
-func (reader *ArchiveReader) ExtractAllConcurrent(outputDir string, numWorkers int) error {
+func (reader *ArchiveReader) ExtractAllConcurrent(
+	outputDir string,
+	numWorkers int) error {
 
 	if reader.Status != Active {
 		return fmt.Errorf("READER::invalid ArchiveWriter status %d", reader.Status)
 	}
 
-	jobs := make([]JobDecompress, 0, len(reader.Files))
-
-	// fmt.Println("Files in archive:", len(reader.Files))
-
-	for _, entry := range reader.Files {
-		newEntry := entry
-
-		if !filepath.IsLocal(filepath.FromSlash(entry.Filename)) {
-			return fmt.Errorf("invalid archive path: %s", entry.Filename)
-		}
-
-		if outputDir != "" {
-			newEntry.Filename = filepath.Join(outputDir, filepath.FromSlash(entry.Filename))
-		}
-
-		jobs = append(jobs, JobDecompress{Entry: newEntry})
+	if numWorkers <= 0 {
+		return fmt.Errorf("READER::invalid numWorkers: %d", numWorkers)
 	}
 
-	return StartDecompressionPool(jobs, reader, numWorkers)
+	switch reader.Version {
+	case 1:
+		jobs := make([]JobDecompress, 0, len(reader.Files))
+
+		// fmt.Println("Files in archive:", len(reader.Files))
+
+		for _, entry := range reader.Files {
+			newEntry := entry
+
+			if !filepath.IsLocal(filepath.FromSlash(entry.Filename)) {
+				return fmt.Errorf("READER::invalid archive path: %s", entry.Filename)
+			}
+
+			if outputDir != "" {
+				newEntry.Filename = filepath.Join(outputDir, filepath.FromSlash(entry.Filename))
+			}
+
+			jobs = append(jobs, JobDecompress{Entry: newEntry})
+		}
+
+		return StartDecompressionPool(jobs, reader, numWorkers)
+	case 2:
+
+		fileMap := make(map[uint32]*os.File)
+
+		success := false
+		defer func() {
+			if !success {
+				reader.Status = Failed
+
+				//remove all paths
+				for _, file := range fileMap {
+					if err := file.Close(); err != nil {
+						fmt.Printf("READER::Error while extracting::%v\n", err)
+					}
+				}
+			}
+		}()
+
+		for _, entry := range reader.FilesV2 {
+
+			if !filepath.IsLocal(filepath.FromSlash(entry.Filename)) {
+				return fmt.Errorf("READER::invalid archive path: %s", entry.Filename)
+			}
+
+			targetPath := filepath.Join(outputDir, filepath.FromSlash(entry.Filename))
+
+			switch entry.Type {
+			case Directory:
+				if err := os.MkdirAll(targetPath, 0755); err != nil {
+					return err
+				}
+			case File:
+				if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+					return err
+				}
+
+				dst, err := os.Create(targetPath)
+				if err != nil {
+					return err
+				}
+
+				fileMap[entry.FileID] = dst
+			default:
+				return fmt.Errorf("READER::invalid FileType: %d\n", entry.Type)
+			}
+		}
+
+		//make chunk map, and then sort
+		chunkMap := make(map[uint32][]ChunkEntry)
+
+		for _, chunk := range reader.ChunksV2 {
+			chunkMap[chunk.FileID] = append(chunkMap[chunk.FileID], chunk)
+		}
+
+		for _, entry := range reader.FilesV2 {
+
+			if entry.ChunkCount == 0 {
+				continue
+			}
+
+			slices.SortFunc(chunkMap[entry.FileID], func(a, b ChunkEntry) int {
+				return cmp.Compare(a.ChunkIndex, b.ChunkIndex)
+			})
+		}
+
+		var jobs []JobDecompressChunk
+
+		for _, entry := range reader.FilesV2 {
+			if entry.ChunkCount == 0 {
+				continue
+			}
+
+			offset := 0
+			for _, chunk := range chunkMap[entry.FileID] {
+				jobs = append(jobs, JobDecompressChunk{Chunk: chunk, DstFile: fileMap[entry.FileID], Dstoffset: int64(offset)})
+				offset += int(chunk.OriginalSize)
+			}
+		}
+
+		if err := StartChunkDecompressionPool(jobs, reader, numWorkers, reader.OutputFile); err != nil {
+			return err
+		}
+
+		for _, file := range fileMap {
+			if err := file.Close(); err != nil {
+				return err
+			}
+		}
+
+		success = true
+	default:
+		return fmt.Errorf("READER::invalid reader version: %d", reader.Version)
+	}
+
+	return nil
+
 }
 
-func (reader *ArchiveReader) extractCompressed(entry FileEntry, dst *os.File) (err error) {
+func (reader *ArchiveReader) extractCompressed(
+	entry FileEntry,
+	dst *os.File) (err error) {
 
 	sectionReader := io.NewSectionReader(reader.OutputFile, int64(entry.DataOffset), int64(entry.CompressedSize))
 	flateReader := flate.NewReader(sectionReader)

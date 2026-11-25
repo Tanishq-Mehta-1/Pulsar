@@ -1,6 +1,7 @@
 package archive
 
 import (
+	"bytes"
 	"compress/flate"
 	"errors"
 	"fmt"
@@ -137,4 +138,40 @@ func CompressFile(job JobCompress) (res ResultCompress) {
 	success = true
 
 	return res
+}
+
+func CompressChunk(job ChunkJob) (ChunkResult, error) {
+	result := ChunkResult{
+		FileID:            job.FileID,
+		ChunkIndex:        job.ChunkIndex,
+		OriginalSize:      uint64(len(job.Data)),
+		CompressionMethod: job.Method,
+		Checksum:          crc32.ChecksumIEEE(job.Data),
+	}
+
+	if job.Method == None {
+		result.Data = job.Data
+		result.CompressedSize = uint64(len(job.Data))
+		return result, nil
+	}
+
+	var buffer bytes.Buffer
+
+	compressor, err := flate.NewWriter(&buffer, int(job.Method))
+	if err != nil {
+		return ChunkResult{}, err
+	}
+
+	if _, err := compressor.Write(job.Data); err != nil {
+		return ChunkResult{}, err
+	}
+
+	if err := compressor.Close(); err != nil {
+		return ChunkResult{}, err
+	}
+
+	result.Data = buffer.Bytes()
+	result.CompressedSize = uint64(buffer.Len())
+
+	return result, nil
 }
