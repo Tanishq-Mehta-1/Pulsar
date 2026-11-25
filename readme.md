@@ -7,7 +7,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.27+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go Version" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT License" />
-  <img src="https://img.shields.io/badge/Format-V1%20%7C%20V2%20Chunked-blueviolet?style=flat-square" alt="Archive Format" />
 </p>
 
 ---
