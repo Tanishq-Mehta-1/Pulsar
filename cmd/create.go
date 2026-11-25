@@ -163,14 +163,15 @@ func create(
 	numWorkers int,
 	chunkSize uint32) (err error) {
 
-	if numWorkers == -1 {
-		numWorkers = 8
-	} else if numWorkers <= 0 {
-		return fmt.Errorf("CREATE::number of workers must be positive")
+	if numWorkers < 0 {
+		return fmt.Errorf("CREATE::invalid worker count")
+	} else if numWorkers == 0 {
+		numWorkers = archive.ResolveWorkers(numWorkers)
+		fmt.Printf("Workers assigned: %d", numWorkers)
 	}
 
 	if chunkSize > archive.MAXCHUNKSIZE/KB {
-		return fmt.Errorf("CREATE::invalid chunk-size: %d, must be in range [1, %d]", chunkSize, archive.MAXCHUNKSIZE/KB)
+		return fmt.Errorf("CREATE::invalid chunk-size: %d, must be in range [0, %d]", chunkSize, archive.MAXCHUNKSIZE/KB)
 	}
 
 	switch version {

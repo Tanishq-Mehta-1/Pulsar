@@ -54,7 +54,7 @@ func main() {
 		archivePath := arguments[1]
 
 		outputDir := ""
-		numWorkers := -1
+		numWorkers := 0
 
 		if len(arguments) > 2 {
 
@@ -70,6 +70,11 @@ func main() {
 					if err != nil {
 						log.Fatal(fmt.Errorf("PLSR::EXTRACT::%w", err))
 					}
+
+					if numWorkers < 0 {
+						log.Fatal(fmt.Errorf("PLSR::EXTRACT::invalid worker count: %d", numWorkers))
+					}
+
 					i++
 				} else {
 					handle_invalid(arguments[0])
@@ -90,10 +95,10 @@ func main() {
 		archivePath := arguments[1]
 
 		var dirs, files []string
-		numWorkers := -1
+		numWorkers := 0
 		outputDir := ""
 		version := 1
-		chunkSize := 0 //default auto
+		chunkSize := 4096 //default 4MB
 		takingFiles := true
 
 		for i, n := 2, len(arguments); i < n; i++ {
@@ -106,6 +111,11 @@ func main() {
 				if err != nil {
 					log.Fatal(fmt.Errorf("PLSR::CREATE::%w", err))
 				}
+
+				if numWorkers < 0 {
+					log.Fatal(fmt.Errorf("PLSR::EXTRACT::invalid numWorkers: %d", numWorkers))
+				}
+
 				i++
 			} else if arg == "-o" && i+1 < n {
 				takingFiles = false

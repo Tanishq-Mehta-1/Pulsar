@@ -356,10 +356,10 @@ func main() {
 	runs := flag.Int("runs", 3, "Number of benchmark repetitions")
 	chunkSize := flag.Int("chunk-size", 256, "Chunk size in KB for Pulsar V2")
 	chunkSizesFlag := flag.String("chunk-sizes", "", "Comma-separated chunk sizes in KB for Pulsar V2 (overrides -chunk-size)")
-	onlyWorkers := flag.Int("workers", 0, "If > 0, only benchmark Pulsar V2 at this worker count (skips V1 and baselines)")
+	onlyWorkers := flag.Int("workers", -1, "If >= 0, only benchmark Pulsar V2 at this worker count (skips V1 and baselines)")
 	flag.Parse()
 
-	if *input == "" || *runs <= 0 || *chunkSize <= 0 || *onlyWorkers < 0 {
+	if *input == "" || *runs <= 0 || *chunkSize < 0 || *onlyWorkers < -1 {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -417,9 +417,12 @@ func main() {
 		}
 	}
 
-	if *onlyWorkers > 0 {
+	if *onlyWorkers >= 0 {
 		for _, cKB := range chunkSizes {
 			name := fmt.Sprintf("PulsarV2-%d", *onlyWorkers)
+			if *onlyWorkers == 0 {
+				name = "PulsarV2-auto"
+			}
 			if err := runRepeated(name, *onlyWorkers, cKB, *runs,
 				originalSize, tempDir, inputPath, pulsarBench(2, *onlyWorkers, cKB)); err != nil {
 				panic(err)

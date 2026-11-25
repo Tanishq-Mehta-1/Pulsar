@@ -13,9 +13,9 @@ Description:
 
 Options:
   -o            Directory in which to create the archive (default: current directory)
-  --workers     Number of compression workers (default: 8)
-  -v            Archive format version: 1 (file-level) or 2 (chunk-based) (default: 1)
-  --chunk-size  Chunk size in KB for v2 archives (default: 0, automatically decides chunk-size)
+  --workers     Number of compression workers (default: 0, assigns number of cores ())
+  -v            Archive format version: 1 (file-level) or 2 (chunk-based) (default: logical or physical)
+  --chunk-size  Chunk size in KB for v2 archives (default: 4096, keep 0 for dynamic file chunking)
 
 Examples:
   plsr create backup.plsr ./project
@@ -33,7 +33,7 @@ Description:
 
 Options:
   -o          Extraction destination (default: current directory)
-  --workers   Number of decompression workers (default: 8)
+  --workers   Number of decompression workers (default: 0, assigns number of cores ())
 
 Examples:
   plsr extract backup.plsr

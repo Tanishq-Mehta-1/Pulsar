@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-//Sync pool with 7 pools, one each for 64,128,256,512,1024,2048,4096 KB
+//Sync pool with 8 pools, one each for 64,128,256,512,1024,2048,4096 KB
 
 const (
 	//bit shift
