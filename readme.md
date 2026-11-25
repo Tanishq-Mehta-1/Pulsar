@@ -146,8 +146,4 @@ Go · DEFLATE · Goroutines · Worker Pools · `sync.Pool` · CRC32 · Binary Se
 
 ## License
 
-<<<<<<< HEAD
 [MIT License](LICENSE)
-=======
-[MIT License](LICENSE)
->>>>>>> chunking
