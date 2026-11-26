@@ -369,6 +369,9 @@ func WriteArchiveV2(
 	for res := range results {
 
 		if firstErr != nil {
+			if res.Codec == CodecStored || res.Codec == CodecZstd {
+				putChunkBuffer(res.Data)
+			}
 			continue
 		}
 
@@ -383,7 +386,7 @@ func WriteArchiveV2(
 			continue
 		}
 
-		if res.Codec == CodecZstd {
+		if res.Codec == CodecStored || res.Codec == CodecZstd {
 			putChunkBuffer(res.Data)
 		}
 

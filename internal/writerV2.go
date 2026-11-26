@@ -308,6 +308,7 @@ func (writer *ArchiveWriterV2) generateChunks(
 
 			chunkJob := ChunkJob{
 				FileID:     uint32(fileId),
+				Filename:   archivePath,
 				ChunkIndex: chunkCount,
 				Data:       buffer,
 				Codec:      codec,

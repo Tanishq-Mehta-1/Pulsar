@@ -34,6 +34,68 @@ type CountWriter struct {
 	bytesWritten int64
 }
 
+// var compressedFormats = map[string]struct{}{
+// 	// Archives and compressed streams
+// 	".zip":  {},
+// 	".7z":   {},
+// 	".rar":  {},
+// 	".gz":   {},
+// 	".tgz":  {},
+// 	".bz2":  {},
+// 	".tbz2": {},
+// 	".xz":   {},
+// 	".txz":  {},
+// 	".zst":  {},
+// 	".zstd": {},
+// 	".lz4":  {},
+// 	".lz":   {},
+// 	".lzo":  {},
+// 	".br":   {},
+// 	".cab":  {},
+// 	".arj":  {},
+// 	".ace":  {},
+// 	".arc":  {},
+// 	".sz":   {},
+
+// 	// Images
+// 	".jpg":  {},
+// 	".jpeg": {},
+// 	".png":  {},
+// 	".webp": {},
+// 	".avif": {},
+// 	".heic": {},
+// 	".heif": {},
+// 	".jxl":  {},
+// 	".gif":  {},
+// 	".jp2":  {},
+
+// 	// Audio
+// 	".mp3":  {},
+// 	".aac":  {},
+// 	".ogg":  {},
+// 	".opus": {},
+// 	".flac": {},
+// 	".m4a":  {},
+// 	".wma":  {},
+// 	".ape":  {},
+
+// 	// Video
+// 	".mp4":  {},
+// 	".mkv":  {},
+// 	".mov":  {},
+// 	".avi":  {},
+// 	".webm": {},
+// 	".flv":  {},
+// 	".wmv":  {},
+
+// 	// Documents and other formats
+// 	".pdf":  {},
+// 	".docx": {},
+// 	".xlsx": {},
+// 	".pptx": {},
+// 	".odt":  {},
+// }
+
 func (counter *CountWriter) Write(p []byte) (n int, err error) {
 
 	n, err = counter.writer.Write(p)
@@ -166,6 +228,32 @@ func CompressChunk(job ChunkJob) (ChunkResult, error) {
 		Codec:             job.Codec,
 		Checksum:          crc32.ChecksumIEEE(job.Data),
 	}
+
+	//for CompressionMethod = None
+	if job.Method == None {
+		job.Codec = CodecStored
+		result.Codec = CodecStored
+	}
+
+	//check if already compressed
+	// if job.Codec != CodecStored && result.OriginalSize >= 64*KB {
+	// 	ext := strings.ToLower(filepath.Ext(job.Filename))
+	// 	if _, exists := compressedFormats[ext]; exists {
+	// 		job.Codec = CodecStored
+	// 		result.Codec = CodecStored
+	// 	} else {
+
+	// 		//if not a known compression format, compress a little part and see if good
+	// 		lilBuffer := getChunkBuffer(4 * KB)
+	// 		lilCompressed := CompressZstd(job.Data[:4*KB], lilBuffer, BestSpeed)
+	// 		putChunkBuffer(lilBuffer)
+
+	// 		if len(lilCompressed) >= (4*KB*98)/100 {
+	// 			job.Codec = CodecStored
+	// 			result.Codec = CodecStored
+	// 		}
+	// 	}
+	// }
 
 	switch job.Codec {
 	case CodecStored:

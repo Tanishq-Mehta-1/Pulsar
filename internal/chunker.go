@@ -2,6 +2,7 @@ package archive
 
 type ChunkJob struct {
 	FileID     uint32
+	Filename   string
 	ChunkIndex uint32
 	Data       []byte
 	Codec      uint8

@@ -53,6 +53,7 @@ var zstdEncoderMax = sync.Pool{
 	New: func() any {
 		writer, _ := zstd.NewWriter(nil,
 			zstd.WithEncoderConcurrency(1),
+			zstd.WithWindowSize(8*1024*KB),
 			zstd.WithEncoderLevel(zstd.SpeedBestCompression),
 			zstd.WithEncoderCRC(false),
 		)
@@ -62,12 +63,18 @@ var zstdEncoderMax = sync.Pool{
 
 var zstdDecoder = sync.Pool{
 	New: func() any {
-		decoder, _ := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(false))
+		decoder, _ := zstd.NewReader(
+			nil,
+			zstd.WithDecoderConcurrency(1),
+			zstd.WithDecoderLowmem(true))
 		return decoder
 	},
 }
 
-func CompressZstd(src []byte, dst []byte, mode CompressionMethod) []byte {
+func CompressZstd(
+	src []byte,
+	dst []byte,
+	mode CompressionMethod) []byte {
 
 	var enc *zstd.Encoder
 	switch mode {
@@ -87,14 +94,20 @@ func CompressZstd(src []byte, dst []byte, mode CompressionMethod) []byte {
 	return enc.EncodeAll(src, dst[:0])
 }
 
-func DecompressZstd(src []byte, dst []byte) ([]byte, error) {
+func DecompressZstd(
+	src []byte,
+	dst []byte) ([]byte, error) {
 	dec := zstdDecoder.Get().(*zstd.Decoder)
 	defer zstdDecoder.Put(dec)
 
 	return dec.DecodeAll(src, dst[:0])
 }
 
-func CompressZstdStream(dst io.Writer, src io.Reader, hasher io.Writer, mode CompressionMethod) (int64, error) {
+func CompressZstdStream(
+	dst io.Writer,
+	src io.Reader,
+	hasher io.Writer,
+	mode CompressionMethod) (int64, error) {
 
 	var enc *zstd.Encoder
 	switch mode {
@@ -127,7 +140,9 @@ func CompressZstdStream(dst io.Writer, src io.Reader, hasher io.Writer, mode Com
 	return n, nil
 }
 
-func DecompressZstdStream(dst io.Writer, src io.Reader) (int64, error) {
+func DecompressZstdStream(
+	dst io.Writer,
+	src io.Reader) (int64, error) {
 	dec := zstdDecoder.Get().(*zstd.Decoder)
 	if err := dec.Reset(src); err != nil {
 		zstdDecoder.Put(dec)

@@ -228,3 +228,21 @@ PulsarV2-zstd      8        8192      3253.97     10.58       11.23       61.05 
 PulsarV2-zstd      12       8192      3253.97     11.19       9.44        61.05     476.42      564.43       605.8        987.0        743.9         4634.2       
 tar + pigz         Auto     -         3246.94     29.61       21.39       60.92     180.01      249.17       13.8         18.1         280.8         2229.7       
 tar + zstd         Auto     -         3186.66     10.83       10.45       59.79     492.24      510.17       82.7         153.6        668.6         2634.6
+
+//holy performance
+[deo3d2y@DEOs Pulsar]$ go build -o ./plsr ./cmd && mkdir -p "$HOME/benchmark-tmp" && TMPDIR="$HOME/benchmark-tmp" go run benchmarks/bench.go   -plsr ./plsr   -input ./testdata5GB/   -versions 2   -codecs zstd   -chunk-sizes 4096,8192   -workers 0,6,12   -baselines zstd,pigz   -runs 3
+
+Dataset: /home/deo3d2y/Desktop/Dev/Pulsar/testdata5GB
+Original size: 5330.19 MB
+Runs: 3
+V2 Chunk sizes (KB): [4096 8192]
+
+Format             Workers  Chunk KB  Archive MB  Compress s  Extract s   Ratio %   Comp MB/s   Extract MB/s Mean RAM MB  Max RAM MB   Mean Disk MB/s Max Disk MB/s
+PulsarV2-zstd      Auto     4096      3296.44     10.90       9.09        61.84     489.19      586.44       345.8        572.4        821.9         4783.6       
+PulsarV2-zstd      6        4096      3296.44     10.01       8.78        61.84     532.56      607.13       294.1        545.5        793.4         3954.2       
+PulsarV2-zstd      12       4096      3296.44     12.27       9.26        61.84     434.23      575.87       433.2        800.8        709.7         4459.3       
+PulsarV2-zstd      Auto     8192      3253.97     9.86        9.27        61.05     540.46      575.30       484.5        749.2        797.4         4860.7       
+PulsarV2-zstd      6        8192      3253.97     9.39        9.46        61.05     567.91      563.30       397.3        669.8        809.9         4279.8       
+PulsarV2-zstd      12       8192      3253.97     11.26       9.33        61.05     473.35      571.35       570.5        936.1        735.5         4401.6       
+tar + pigz         Auto     -         3246.94     29.47       20.81       60.92     180.87      256.16       13.7         17.9         275.9         2295.2       
+tar + zstd         Auto     -         3186.66     10.59       10.26       59.79     503.12      519.60       81.5         153.4        661.6         2585.4 
