@@ -187,7 +187,7 @@ func create(
 	if numWorkers < 0 {
 		return fmt.Errorf("CREATE::invalid worker count")
 	} else if numWorkers == 0 {
-		numWorkers = archive.ResolveWorkers(numWorkers)
+		numWorkers = archive.ResolveWorkers(numWorkers, codec)
 		// fmt.Printf("Workers assigned: %d", numWorkers)
 	}
 

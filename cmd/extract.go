@@ -17,7 +17,7 @@ func extract(path string, dst string, numWorkers int) error {
 	if numWorkers < 0 {
 		return fmt.Errorf("EXTRACT::invalid worker count")
 	} else if numWorkers == 0 {
-		numWorkers = archive.ResolveWorkers(numWorkers)
+		numWorkers = archive.ResolveWorkers(numWorkers, "extract")
 		// fmt.Printf("Workers assigned: %d", numWorkers)
 	}
 

@@ -98,9 +98,9 @@ func main() {
 		var dirs, files []string
 		numWorkers := 0
 		outputDir := ""
-		version := 1
+		version := 2
 		chunkSize := 4096 //default 4MB
-		codec := "deflate"
+		codec := "zstd"
 		preset := archive.Default
 		takingFiles := true
 
