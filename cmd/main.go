@@ -177,7 +177,7 @@ func main() {
 			}
 		}
 
-		if err := create(archivePath, files, dirs, outputDir, version, numWorkers, uint32(chunkSize), codec, archive.CompressionMethod); err != nil {
+		if err := create(archivePath, files, dirs, outputDir, version, numWorkers, uint32(chunkSize), codec, preset); err != nil {
 			log.Fatal(fmt.Errorf("PLSR::%w", err))
 		}
 

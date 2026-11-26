@@ -86,7 +86,8 @@ func (writer *ArchiveWriterV1) CreateArchive(
 
 func (writer *ArchiveWriterV1) AddFilesConcurrent(
 	files []FileStruct,
-	numWorkers int) error {
+	numWorkers int,
+	codec uint8) error {
 
 	if writer.Status != Active {
 		return fmt.Errorf("WRITERV1::invalid ArchiveWriterV1 status %d", writer.Status)
@@ -109,7 +110,7 @@ func (writer *ArchiveWriterV1) AddFilesConcurrent(
 			return fmt.Errorf("WRITERV1::incorrect compression method: %d", file.Method)
 		}
 
-		jobs = append(jobs, JobCompress{Path: file.Path, ArchivePath: file.ArchivePath, CompressionMethod: file.Method})
+		jobs = append(jobs, JobCompress{Path: file.Path, ArchivePath: file.ArchivePath, CompressionMethod: file.Method, Codec: codec})
 	}
 
 	res := StartCompressionPool(jobs, numWorkers)
@@ -124,12 +125,10 @@ func (writer *ArchiveWriterV1) AddFilesConcurrent(
 func (writer *ArchiveWriterV1) AddDirectory(
 	dirPath string,
 	numWorkers int,
-	method ...CompressionMethod) error {
+	codec uint8,
+	method CompressionMethod) error {
 
 	dirMethod := Default
-	if len(method) > 0 {
-		dirMethod = method[0]
-	}
 
 	if !dirExists(dirPath) {
 		return fmt.Errorf("WRITERV1::error opening the directory")
@@ -177,7 +176,7 @@ func (writer *ArchiveWriterV1) AddDirectory(
 		return err
 	}
 
-	if err := writer.AddFilesConcurrent(files, numWorkers); err != nil {
+	if err := writer.AddFilesConcurrent(files, numWorkers, codec); err != nil {
 		return err
 	}
 
