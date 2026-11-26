@@ -126,11 +126,56 @@ PulsarV2-deflate (Auto, 4MB)█████████████████�
 tar + pigz (-6)             █████████████████▌                        249.17
 ```
 
+Tested across three distinct workloads over **3-run medians** with full SHA-256 extraction verification enabled (`benchmarks/bench.go`):
+
+* **`silesia_10x` (2,223.32 MB):** 10× Silesia Corpus — mixed text, databases, compiled binaries, and XML.
+* **`testdata5GB` (5,330.19 MB):** Large binary & media files (PSDs and high-resolution images).
+* **`linux-src` (1,408.10 MB):** Linux kernel source tree (~85,000 small source and header files).
+
+### Performance & Resource Summary
+
+| Dataset | Archiver | Config | Archive Size | Ratio | Comp Speed | Extract Speed | Max RAM |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **`silesia_10x`** *(2.22 GB)* | **`PulsarV2-zstd`** | Auto (6w), 8 MB | 709.29 MB | 31.90% | **741.70 MB/s** | **637.04 MB/s** | 374.9 MB |
+| | `PulsarV2-zstd` | Auto (6w), 4 MB | 711.44 MB | 32.00% | 686.92 MB/s | 629.50 MB/s | 239.4 MB |
+| | `tar + zstd` | `-T0 -3` | **694.78 MB** | **31.25%** | 711.34 MB/s | 595.41 MB/s | **137.9 MB** |
+| **`testdata5GB`** *(5.33 GB)* | **`PulsarV2-zstd`** | Auto (6w), 8 MB | 3,253.97 MB | 61.05% | **482.93 MB/s** | **560.47 MB/s** | 678.9 MB |
+| | `PulsarV2-zstd` | Auto (6w), 4 MB | 3,296.44 MB | 61.84% | 472.60 MB/s | 568.80 MB/s | 538.1 MB |
+| | `tar + zstd` | `-T0 -3` | **3,186.66 MB** | **59.79%** | 465.76 MB/s | 506.46 MB/s | **153.4 MB** |
+| **`linux-src`** *(1.41 GB)* | **`PulsarV2-zstd`** | 6w, 4 MB | 281.09 MB | 19.96% | **193.81 MB/s** | 398.40 MB/s | 361.6 MB |
+| | `PulsarV2-zstd` | Auto (6w), 8 MB | 280.36 MB | 19.91% | 158.16 MB/s | 344.24 MB/s | 447.1 MB |
+| | `tar + zstd` | `-T0 -3` | **213.42 MB** | **15.16%** | 173.88 MB/s | **474.81 MB/s** | **103.0 MB** |
+
+### Throughput Comparison (MB/s)
+
+```text
+silesia_10x (2.22 GB Mixed Corpus)
+PulsarV2-zstd (Auto, 8MB)   Comp ███████████████████████████████████████▌ 741.70
+tar + zstd (-T0 -3)         Comp ██████████████████████████████████████   711.34
+PulsarV2-zstd (Auto, 8MB)   Extr ██████████████████████████████████       637.04
+tar + zstd (-T0 -3)         Extr ███████████████████████████████▊         595.41
+
+testdata5GB (5.33 GB Binary & Media)
+PulsarV2-zstd (Auto, 8MB)   Comp █████████████████████████▊               482.93
+tar + zstd (-T0 -3)         Comp ████████████████████████▉                465.76
+PulsarV2-zstd (Auto, 8MB)   Extr ██████████████████████████████           560.47
+tar + zstd (-T0 -3)         Extr ███████████████████████████              506.46
+
+linux-src (1.41 GB / ~85k Small Files)
+PulsarV2-zstd (6w, 4MB)     Comp ██████████▎                              193.81
+tar + zstd (-T0 -3)         Comp █████████▎                               173.88
+PulsarV2-zstd (6w, 4MB)     Extr █████████████████████▎                   398.40
+tar + zstd (-T0 -3)         Extr █████████████████████████▍               474.81
+```
+
 ### Key Takeaways
 
 * **Beats `tar + zstd` at multi-GB scale:** On the 5.33 GB dataset, `PulsarV2-zstd` reaches **532.41 MB/s** compression and **590.23 MB/s** extraction, outperforming `tar + zstd` (`506.87 MB/s` comp, `521.16 MB/s` ext) while maintaining indexed random-access chunks.
 * **2.2x–2.9x faster than `tar + pigz`:** Both Zstd and DEFLATE modes substantially outperform `tar + pigz` across compression and parallel extraction while matching archive size within `0.13%` (`8192 KB` Zstd).
 * **Codec-aware scaling:** Zstd peaks at **4–6 workers** (physical core saturation without L3 cache contention), while DEFLATE scales linearly up to **12 workers**.
+* **Out-of-the-box `Auto` + `8 MB` chunks wins across medium and large workloads:** `PulsarV2-zstd` (`Auto`, `8192 KB`) outperforms `tar + zstd` in both compression and extraction on `silesia_10x` (**741.70 vs. 711.34 MB/s** comp, **637.04 vs. 595.41 MB/s** extract) and `testdata5GB` (**482.93 vs. 465.76 MB/s** comp, **560.47 vs. 506.46 MB/s** extract), landing within **0.65%–1.26%** of `tar + zstd`'s compression ratio while preserving $O(1)$ random-access file extraction.
+* **Physical-core concurrency prevents cache thrashing:** Sizing Zstd workers to physical cores (`Auto` = `6` workers) keeps per-worker match tables hot in L2/L3 cache, avoiding the throughput drop and ~250 MB RAM overhead seen when saturating all 12 SMT threads.
+* **Small-file workloads (`linux-src`) highlight the next optimization target:** Archiving ~85,000 tiny source files (`~16 KB` avg) without cross-file solid packing creates isolated per-file Zstd frames and directory metadata overhead (`19.91%` vs. `15.16%` ratio). Coalescing small files into shared `8 MB` chunks and deduplicating directory creation during extraction will close that gap while keeping $O(1)$ random access intact.
 
 ### Running Benchmarks
 
