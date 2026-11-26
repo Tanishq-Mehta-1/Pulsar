@@ -11,7 +11,7 @@ import (
 
 const KB = 1024
 
-const queueCapacity int = 100 //arbitrary rn
+// const queueCapacity int = 100 //arbitrary rn
 
 func appendResult(
 	writer *ArchiveWriterV1,
@@ -145,8 +145,8 @@ func StartCompressionPool(
 
 	var wg sync.WaitGroup
 
-	jobs := make(chan JobCompress, queueCapacity)
-	results := make(chan ResultCompress, queueCapacity)
+	jobs := make(chan JobCompress, workerCount*2)
+	results := make(chan ResultCompress, workerCount*2)
 
 	for range workerCount {
 		wg.Add(1)
@@ -220,7 +220,7 @@ func StartDecompressionPool(
 
 	wg := sync.WaitGroup{}
 
-	jobs := make(chan JobDecompress, queueCapacity)
+	jobs := make(chan JobDecompress, workerCount*2)
 	errors := make(chan error, len(jobsList))
 
 	for range workerCount {
@@ -286,8 +286,8 @@ func StartChunkCompressionPool(
 
 	var wg sync.WaitGroup
 
-	jobs := make(chan ChunkJob, queueCapacity)
-	results := make(chan ChunkResult, queueCapacity)
+	jobs := make(chan ChunkJob, workerCount*2)
+	results := make(chan ChunkResult, workerCount*2)
 
 	fileEntryMetadata := make(chan []FileEntryChunk, 1)
 
@@ -433,7 +433,7 @@ func StartChunkDecompressionPool(
 
 	wg := sync.WaitGroup{}
 
-	jobs := make(chan JobDecompressChunk, queueCapacity)
+	jobs := make(chan JobDecompressChunk, workerCount*2)
 	errors := make(chan error, len(jobsList))
 
 	for range workerCount {

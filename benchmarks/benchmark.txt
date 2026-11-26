@@ -174,3 +174,57 @@ PulsarV2-deflate   12       8192      3352.94      12.99        13.03        62.
 PulsarV2-deflate   16       8192      3352.94      13.44        13.28        62.90        396.56       401.23      
 tar + pigz         Auto     -         3246.94      28.72        20.83        60.92        185.57       255.84      
 tar + zstd         Auto     -         3186.66      10.52        10.23        59.79        506.87       521.16   
+
+[deo3d2y@DEOs Pulsar]$ go run benchmarks/bench.go   -plsr ./plsr   -input ./testdata730MB/   -versions 2   -codecs zstd,deflate   -chunk-sizes 4096,8192   -workers 0,6,8,12   -baselines pigz,zstd   -runs 3
+
+Dataset: /home/deo3d2y/Desktop/Dev/Pulsar/testdata730MB
+Original size: 729.59 MB
+Runs: 3
+V2 Chunk sizes (KB): [4096 8192]
+
+Format             Workers  Chunk KB  Archive MB  Compress s  Extract s   Ratio %   Comp MB/s   Extract MB/s Mean RAM MB  Max RAM MB   Mean Disk MB/s Max Disk MB/s
+PulsarV2-deflate   Auto     4096      506.91      1.82        1.04        69.48     400.95      699.04       461.8        1019.8       688.6         1196.6       
+PulsarV2-deflate   6        4096      506.91      2.24        1.31        69.48     325.43      554.94       466.0        893.0        554.1         966.9        
+PulsarV2-deflate   8        4096      506.91      2.08        1.20        69.48     350.67      608.92       481.2        943.6        599.6         1049.3       
+PulsarV2-deflate   12       4096      506.91      1.85        1.06        69.48     394.21      687.34       487.4        1016.3       673.1         1166.8       
+PulsarV2-zstd      Auto     4096      513.43      1.81        0.47        70.37     403.03      1552.64      431.2        674.4        865.1         2657.4       
+PulsarV2-zstd      6        4096      513.43      1.16        0.44        70.37     631.40      1671.60      353.5        540.2        1240.0        2855.3       
+PulsarV2-zstd      8        4096      513.43      1.32        0.47        70.37     553.45      1551.36      389.9        589.9        1118.4        2789.9       
+PulsarV2-zstd      12       4096      513.43      1.90        0.47        70.37     384.89      1542.83      436.7        651.8        836.2         2681.5       
+PulsarV2-deflate   Auto     8192      506.82      2.00        1.07        69.47     365.02      678.76       645.0        1496.7       620.7         1154.5       
+PulsarV2-deflate   6        8192      506.82      2.35        1.31        69.47     310.98      558.23       688.1        1457.0       368.8         954.1        
+PulsarV2-deflate   8        8192      506.82      2.16        1.19        69.47     337.02      613.36       723.8        1482.3       582.3         1044.9       
+PulsarV2-deflate   12       8192      506.82      1.90        1.07        69.47     383.69      682.53       670.5        1453.0       664.6         1170.8       
+PulsarV2-zstd      Auto     8192      507.51      1.74        0.47        69.56     420.32      1537.71      591.9        920.4        889.1         2625.4       
+PulsarV2-zstd      6        8192      507.51      1.11        0.46        69.56     654.96      1595.14      506.6        811.1        1251.3        2723.9       
+PulsarV2-zstd      8        8192      507.51      1.25        0.46        69.56     584.39      1578.24      543.1        838.7        1149.6        2679.6       
+PulsarV2-zstd      12       8192      507.51      1.73        0.48        69.56     422.24      1532.97      591.7        886.0        892.0         2608.7       
+tar + pigz         Auto     -         489.39      4.12        2.68        67.08     176.93      272.54       13.9         17.9         284.4         456.0        
+tar + zstd         Auto     -         499.73      1.22        0.86        68.49     597.22      849.49       88.2         153.3        943.8         1439.5       
+
+[deo3d2y@DEOs Pulsar]$ TMPDIR="$HOME/benchmark-tmp" go run benchmarks/bench.go   -plsr ./plsr   -input ./testdata5GB/   -versions 2   -codecs zstd,deflate   -chunk-sizes 4096,8192   -workers 0,6,8,12   -baselines pigz,zstd   -runs 3
+
+Dataset: /home/deo3d2y/Desktop/Dev/Pulsar/testdata5GB
+Original size: 5330.19 MB
+Runs: 3
+V2 Chunk sizes (KB): [4096 8192]
+
+Format             Workers  Chunk KB  Archive MB  Compress s  Extract s   Ratio %   Comp MB/s   Extract MB/s Mean RAM MB  Max RAM MB   Mean Disk MB/s Max Disk MB/s
+PulsarV2-deflate   Auto     4096      3354.78     14.81       12.76       62.94     359.88      417.68       184.0        486.4        608.9         3606.9       
+PulsarV2-deflate   6        4096      3354.78     16.60       14.04       62.94     321.11      379.77       145.3        272.1        541.5         3275.0       
+PulsarV2-deflate   8        4096      3354.78     15.08       13.19       62.94     353.42      404.15       175.5        346.7        566.6         3385.4       
+PulsarV2-deflate   12       4096      3354.78     14.83       12.91       62.94     359.34      412.90       182.2        485.2        579.5         3356.6       
+PulsarV2-zstd      Auto     4096      3296.44     11.01       10.71       61.84     484.15      497.46       320.3        598.5        766.3         3968.9       
+PulsarV2-zstd      6        4096      3296.44     11.40       9.78        61.84     467.40      544.97       282.6        588.0        749.8         3893.5       
+PulsarV2-zstd      8        4096      3296.44     11.58       9.35        61.84     460.19      569.78       359.4        688.7        775.8         3747.4       
+PulsarV2-zstd      12       4096      3296.44     12.62       9.62        61.84     422.22      553.99       430.2        902.4        736.9         5247.8       
+PulsarV2-deflate   Auto     8192      3352.94     13.63       13.64       62.90     391.15      390.74       313.9        858.7        604.6         5338.2       
+PulsarV2-deflate   6        8192      3352.94     15.96       14.43       62.90     333.92      369.34       265.7        514.3        537.7         3132.1       
+PulsarV2-deflate   8        8192      3352.94     14.45       14.05       62.90     368.84      379.37       322.4        642.4        568.2         3608.0       
+PulsarV2-deflate   12       8192      3352.94     13.69       13.93       62.90     389.32      382.58       326.4        860.2        562.5         3778.8       
+PulsarV2-zstd      Auto     8192      3253.97     10.21       9.42        61.05     522.12      565.73       487.6        767.2        792.8         6104.0       
+PulsarV2-zstd      6        8192      3253.97     10.18       9.48        61.05     523.83      562.29       406.2        732.9        799.0         4021.6       
+PulsarV2-zstd      8        8192      3253.97     10.58       11.23       61.05     503.85      474.65       493.5        822.6        739.6         4290.8       
+PulsarV2-zstd      12       8192      3253.97     11.19       9.44        61.05     476.42      564.43       605.8        987.0        743.9         4634.2       
+tar + pigz         Auto     -         3246.94     29.61       21.39       60.92     180.01      249.17       13.8         18.1         280.8         2229.7       
+tar + zstd         Auto     -         3186.66     10.83       10.45       59.79     492.24      510.17       82.7         153.6        668.6         2634.6

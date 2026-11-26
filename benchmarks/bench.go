@@ -9,9 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -24,16 +26,128 @@ type Result struct {
 	ArchiveSize int64
 	Compress    time.Duration
 	Extract     time.Duration
+	MeanRAMMB   float64
+	MaxRAMMB    float64
+	MeanDiskMBS float64
+	MaxDiskMBS  float64
 }
 
 type RunMetrics struct {
 	Compress    time.Duration
 	Extract     time.Duration
 	ArchiveSize int64
-	PeakRSSMB   float64
+	MeanRAMMB   float64
+	MaxRAMMB    float64
+	MeanDiskMBS float64
+	MaxDiskMBS  float64
 }
 
-type Benchmark func(archivePath, input, output string) (RunMetrics, error)
+type Benchmark func(archivePath, input, output string, originalSize int64) (RunMetrics, error)
+
+// sampleProcessTreeRSSMB reads VmRSS from /proc/<pid>/status for the root process
+// and any child processes (such as tar -> zstd/pigz) on Linux.
+func sampleProcessTreeRSSMB(rootPID int) float64 {
+	var totalKB float64
+
+	readRSSKB := func(pid int) float64 {
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+		if err != nil {
+			return 0
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "VmRSS:") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 {
+					if v, err := strconv.ParseFloat(fields[1], 64); err == nil {
+						return v
+					}
+				}
+				break
+			}
+		}
+		return 0
+	}
+
+	// BFS across child PIDs via /proc/<pid>/task/<tid>/children
+	queue := []int{rootPID}
+	seen := map[int]bool{rootPID: true}
+	for len(queue) > 0 {
+		pid := queue[0]
+		queue = queue[1:]
+		totalKB += readRSSKB(pid)
+
+		taskDirs, err := filepath.Glob(fmt.Sprintf("/proc/%d/task/*/children", pid))
+		if err != nil {
+			continue
+		}
+		for _, childFile := range taskDirs {
+			raw, err := os.ReadFile(childFile)
+			if err != nil {
+				continue
+			}
+			for _, f := range strings.Fields(string(raw)) {
+				if childPID, err := strconv.Atoi(f); err == nil && !seen[childPID] {
+					seen[childPID] = true
+					queue = append(queue, childPID)
+				}
+			}
+		}
+	}
+
+	return totalKB / 1024.0
+}
+
+// readProcDiskBytes returns total (read_bytes + write_bytes) across the process tree
+// from /proc/<pid>/io on Linux.
+func readProcDiskBytes(rootPID int) uint64 {
+	var total uint64
+
+	readIO := func(pid int) uint64 {
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/io", pid))
+		if err != nil {
+			return 0
+		}
+		var sum uint64
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "read_bytes:") || strings.HasPrefix(line, "write_bytes:") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 {
+					if v, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+						sum += v
+					}
+				}
+			}
+		}
+		return sum
+	}
+
+	queue := []int{rootPID}
+	seen := map[int]bool{rootPID: true}
+	for len(queue) > 0 {
+		pid := queue[0]
+		queue = queue[1:]
+		total += readIO(pid)
+
+		taskDirs, err := filepath.Glob(fmt.Sprintf("/proc/%d/task/*/children", pid))
+		if err != nil {
+			continue
+		}
+		for _, childFile := range taskDirs {
+			raw, err := os.ReadFile(childFile)
+			if err != nil {
+				continue
+			}
+			for _, f := range strings.Fields(string(raw)) {
+				if childPID, err := strconv.Atoi(f); err == nil && !seen[childPID] {
+					seen[childPID] = true
+					queue = append(queue, childPID)
+				}
+			}
+		}
+	}
+
+	return total
+}
 
 func maxRSSMB(cmd *exec.Cmd) float64 {
 	if cmd == nil || cmd.ProcessState == nil {
@@ -46,13 +160,152 @@ func maxRSSMB(cmd *exec.Cmd) float64 {
 	return 0
 }
 
-func runCommandDir(dir, name string, args ...string) (float64, error) {
+type phaseStats struct {
+	elapsed     time.Duration
+	meanRAMMB   float64
+	maxRAMMB    float64
+	meanDiskMBS float64
+	maxDiskMBS  float64
+}
+
+// runCommandMonitored executes a command while sampling RAM and disk I/O at 10ms intervals.
+func runCommandMonitored(dir, name string, fallbackDiskBytes int64, args ...string) (phaseStats, error) {
 	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return 0, fmt.Errorf("%s %v: %w\n%s", name, args, err, out)
+	if dir != "" {
+		cmd.Dir = dir
 	}
-	return maxRSSMB(cmd), nil
+
+	var outBuf strings.Builder
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &outBuf
+
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
+		return phaseStats{}, fmt.Errorf("%s %v: %w", name, args, err)
+	}
+
+	pid := cmd.Process.Pid
+	var (
+		mu          sync.Mutex
+		ramSum      float64
+		ramSamples  int
+		peakRAM     float64
+		peakDiskMBS float64
+		totalDiskB  uint64
+		prevDiskB   uint64
+		prevTime    = start
+		done        = make(chan struct{})
+	)
+
+	// Take an immediate initial sample before fast commands finish.
+	if r := sampleProcessTreeRSSMB(pid); r > 0 {
+		ramSum += r
+		ramSamples++
+		peakRAM = r
+	}
+	prevDiskB = readProcDiskBytes(pid)
+	totalDiskB = prevDiskB
+
+	go func() {
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case now := <-ticker.C:
+				rss := sampleProcessTreeRSSMB(pid)
+				curDiskB := readProcDiskBytes(pid)
+
+				mu.Lock()
+				if rss > 0 {
+					ramSum += rss
+					ramSamples++
+					if rss > peakRAM {
+						peakRAM = rss
+					}
+				}
+				if curDiskB >= prevDiskB {
+					deltaB := curDiskB - prevDiskB
+					totalDiskB += deltaB
+					dt := now.Sub(prevTime).Seconds()
+					if dt > 0 {
+						instMBS := float64(deltaB) / dt / (1024 * 1024)
+						if instMBS > peakDiskMBS {
+							peakDiskMBS = instMBS
+						}
+					}
+					prevDiskB = curDiskB
+				}
+				prevTime = now
+				mu.Unlock()
+			}
+		}
+	}()
+
+	waitErr := cmd.Wait()
+	close(done)
+	elapsed := time.Since(start)
+
+	if waitErr != nil {
+		return phaseStats{}, fmt.Errorf("%s %v: %w\n%s", name, args, waitErr, outBuf.String())
+	}
+
+	// Reconcile with kernel rusage MaxRSS so sub-10ms commands still report accurate peak RAM.
+	rusagePeak := maxRSSMB(cmd)
+	mu.Lock()
+	if rusagePeak > peakRAM {
+		peakRAM = rusagePeak
+	}
+	meanRAM := peakRAM
+	if ramSamples > 0 {
+		meanRAM = ramSum / float64(ramSamples)
+	}
+
+	// Calculate mean disk throughput (MB/s); fall back to logical bytes read+written
+	// if /proc/<pid>/io isn't exposed or command finished before first sample.
+	effectiveDiskBytes := float64(totalDiskB)
+	if effectiveDiskBytes == 0 && fallbackDiskBytes > 0 {
+		effectiveDiskBytes = float64(fallbackDiskBytes)
+	}
+	meanDiskMBS := 0.0
+	if elapsed.Seconds() > 0 && effectiveDiskBytes > 0 {
+		meanDiskMBS = effectiveDiskBytes / elapsed.Seconds() / (1024 * 1024)
+	}
+	if meanDiskMBS > peakDiskMBS {
+		peakDiskMBS = meanDiskMBS
+	}
+	mu.Unlock()
+
+	return phaseStats{
+		elapsed:     elapsed,
+		meanRAMMB:   meanRAM,
+		maxRAMMB:    peakRAM,
+		meanDiskMBS: meanDiskMBS,
+		maxDiskMBS:  peakDiskMBS,
+	}, nil
+}
+
+func combinePhaseMetrics(comp, ext phaseStats, archiveSize int64) RunMetrics {
+	totalElapsed := comp.elapsed + ext.elapsed
+	meanRAM := comp.meanRAMMB
+	meanDisk := comp.meanDiskMBS
+	if totalElapsed > 0 {
+		wComp := comp.elapsed.Seconds() / totalElapsed.Seconds()
+		wExt := ext.elapsed.Seconds() / totalElapsed.Seconds()
+		meanRAM = comp.meanRAMMB*wComp + ext.meanRAMMB*wExt
+		meanDisk = comp.meanDiskMBS*wComp + ext.meanDiskMBS*wExt
+	}
+
+	return RunMetrics{
+		Compress:    comp.elapsed,
+		Extract:     ext.elapsed,
+		ArchiveSize: archiveSize,
+		MeanRAMMB:   meanRAM,
+		MaxRAMMB:    max(comp.maxRAMMB, ext.maxRAMMB),
+		MeanDiskMBS: meanDisk,
+		MaxDiskMBS:  max(comp.maxDiskMBS, ext.maxDiskMBS),
+	}
 }
 
 func requireTools(names ...string) map[string]bool {
@@ -125,7 +378,7 @@ func verifyExtracted(manifest map[string][32]byte, outputDir string) error {
 	return nil
 }
 
-func runPulsar(binary, archivePath, input, output string, version int, codec string, chunkSizeKB, workers int) (RunMetrics, error) {
+func runPulsar(binary, archivePath, input, output string, originalSize int64, version int, codec string, chunkSizeKB, workers int) (RunMetrics, error) {
 	_ = os.Remove(archivePath)
 	_ = os.RemoveAll(output)
 
@@ -152,57 +405,45 @@ func runPulsar(binary, archivePath, input, output string, version int, codec str
 		createArgs = append(createArgs, "--chunk-size", fmt.Sprint(chunkSizeKB))
 	}
 
-	start := time.Now()
-	createCmd := exec.Command(binary, createArgs...)
-	if out, err := createCmd.CombinedOutput(); err != nil {
-		return RunMetrics{}, fmt.Errorf("Pulsar v%d (%s) create: %w\n%s", version, codec, err, out)
+	compStats, err := runCommandMonitored("", binary, originalSize, createArgs...)
+	if err != nil {
+		return RunMetrics{}, fmt.Errorf("Pulsar v%d (%s) create: %w", version, codec, err)
 	}
-	compressTime := time.Since(start)
-	createRSS := maxRSSMB(createCmd)
 
 	info, err := os.Stat(actualArchivePath)
 	if err != nil {
 		return RunMetrics{}, fmt.Errorf("expected archive %s: %w", actualArchivePath, err)
 	}
+	// Refine fallback disk bytes with exact archive size if /proc/io missed fast runs
+	if compStats.meanDiskMBS == 0 && compStats.elapsed.Seconds() > 0 {
+		compStats.meanDiskMBS = float64(originalSize+info.Size()) / compStats.elapsed.Seconds() / (1024 * 1024)
+		compStats.maxDiskMBS = max(compStats.maxDiskMBS, compStats.meanDiskMBS)
+	}
 
-	start = time.Now()
-	extractCmd := exec.Command(
-		binary, "extract", actualArchivePath,
+	extStats, err := runCommandMonitored(
+		"", binary, originalSize+info.Size(),
+		"extract", actualArchivePath,
 		"-o", output, "--workers", fmt.Sprint(workers),
 	)
-	if out, err := extractCmd.CombinedOutput(); err != nil {
-		return RunMetrics{}, fmt.Errorf("Pulsar v%d (%s) extract: %w\n%s", version, codec, err, out)
-	}
-	extractTime := time.Since(start)
-	extractRSS := maxRSSMB(extractCmd)
-
-	peakRSS := createRSS
-	if extractRSS > peakRSS {
-		peakRSS = extractRSS
+	if err != nil {
+		return RunMetrics{}, fmt.Errorf("Pulsar v%d (%s) extract: %w", version, codec, err)
 	}
 
-	return RunMetrics{
-		Compress:    compressTime,
-		Extract:     extractTime,
-		ArchiveSize: info.Size(),
-		PeakRSSMB:   peakRSS,
-	}, nil
+	return combinePhaseMetrics(compStats, extStats, info.Size()), nil
 }
 
 func benchmarkExternal(
-	archivePath, input, output, workDir string,
+	archivePath, input, output, workDir string, originalSize int64,
 	createArgs, extractArgs func(archivePath, input, output string) []string,
 ) (RunMetrics, error) {
 	_ = os.Remove(archivePath)
 	_ = os.RemoveAll(output)
 
-	start := time.Now()
 	create := createArgs(archivePath, input, output)
-	createRSS, err := runCommandDir(workDir, create[0], create[1:]...)
+	compStats, err := runCommandMonitored(workDir, create[0], originalSize, create[1:]...)
 	if err != nil {
 		return RunMetrics{}, err
 	}
-	compressTime := time.Since(start)
 
 	info, err := os.Stat(archivePath)
 	if err != nil {
@@ -212,25 +453,13 @@ func benchmarkExternal(
 	if err := os.MkdirAll(output, 0755); err != nil {
 		return RunMetrics{}, err
 	}
-	start = time.Now()
 	args := extractArgs(archivePath, input, output)
-	extractRSS, err := runCommandDir(workDir, args[0], args[1:]...)
+	extStats, err := runCommandMonitored(workDir, args[0], originalSize+info.Size(), args[1:]...)
 	if err != nil {
 		return RunMetrics{}, err
 	}
-	extractTime := time.Since(start)
 
-	peakRSS := createRSS
-	if extractRSS > peakRSS {
-		peakRSS = extractRSS
-	}
-
-	return RunMetrics{
-		Compress:    compressTime,
-		Extract:     extractTime,
-		ArchiveSize: info.Size(),
-		PeakRSSMB:   peakRSS,
-	}, nil
+	return combinePhaseMetrics(compStats, extStats, info.Size()), nil
 }
 
 func createGoZip(input, archivePath string) error {
@@ -334,26 +563,48 @@ func extractGoZip(archivePath, output string) error {
 	return nil
 }
 
-func benchmarkGoZip(archivePath, input, output string) (RunMetrics, error) {
+func benchmarkGoZip(archivePath, input, output string, originalSize int64) (RunMetrics, error) {
 	_ = os.Remove(archivePath)
 	_ = os.RemoveAll(output)
+
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	baseAlloc := float64(ms.Sys) / (1024 * 1024)
+
 	start := time.Now()
 	if err := createGoZip(input, archivePath); err != nil {
 		return RunMetrics{}, err
 	}
 	compressTime := time.Since(start)
+
 	info, err := os.Stat(archivePath)
 	if err != nil {
 		return RunMetrics{}, err
 	}
+
 	start = time.Now()
 	if err := extractGoZip(archivePath, output); err != nil {
 		return RunMetrics{}, err
 	}
+	extractTime := time.Since(start)
+
+	runtime.ReadMemStats(&ms)
+	peakAlloc := float64(ms.Sys) / (1024 * 1024)
+	ramMB := max(baseAlloc, peakAlloc)
+
+	compDiskMBS := float64(originalSize+info.Size()) / compressTime.Seconds() / (1024 * 1024)
+	extDiskMBS := float64(originalSize+info.Size()) / extractTime.Seconds() / (1024 * 1024)
+	totalSec := (compressTime + extractTime).Seconds()
+	meanDiskMBS := float64(2*(originalSize+info.Size())) / totalSec / (1024 * 1024)
+
 	return RunMetrics{
 		Compress:    compressTime,
-		Extract:     time.Since(start),
+		Extract:     extractTime,
 		ArchiveSize: info.Size(),
+		MeanRAMMB:   ramMB,
+		MaxRAMMB:    ramMB,
+		MeanDiskMBS: meanDiskMBS,
+		MaxDiskMBS:  max(compDiskMBS, extDiskMBS),
 	}, nil
 }
 
@@ -365,6 +616,15 @@ func medianDuration(values []time.Duration) time.Duration {
 
 func medianInt64(values []int64) int64 {
 	sorted := append([]int64(nil), values...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	return sorted[len(sorted)/2]
+}
+
+func medianFloat64(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := append([]float64(nil), values...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
 	return sorted[len(sorted)/2]
 }
@@ -442,17 +702,19 @@ func printResult(r Result, originalSize int64) {
 	if r.Workers > 0 {
 		workersCol = fmt.Sprintf("%d", r.Workers)
 	}
-	fmt.Printf("%-18s %-8s %-9s %-12.2f %-12.2f %-12.2f %-12.2f %-12.2f %-12.2f\n",
+	fmt.Printf("%-18s %-8s %-9s %-11.2f %-11.2f %-11.2f %-9.2f %-11.2f %-12.2f %-12.1f %-12.1f %-13.1f %-13.1f\n",
 		r.Name, workersCol, chunkCol,
 		float64(r.ArchiveSize)/(1024*1024),
 		r.Compress.Seconds(), r.Extract.Seconds(), ratio,
-		compressSpeed, extractSpeed)
+		compressSpeed, extractSpeed,
+		r.MeanRAMMB, r.MaxRAMMB, r.MeanDiskMBS, r.MaxDiskMBS)
 }
 
 func runRepeated(name string, workers int, chunkKB int, showDyn bool, runs int, originalSize int64, manifest map[string][32]byte,
 	tempDir, input string, benchmark Benchmark) error {
 	var compressTimes, extractTimes []time.Duration
 	var archiveSizes []int64
+	var meanRAMs, maxRAMs, meanDisks, maxDisks []float64
 
 	safeID := strings.NewReplacer(" ", "-", "/", "-", "(", "", ")", "", ",", "-").Replace(name)
 	if showDyn {
@@ -472,7 +734,7 @@ func runRepeated(name string, workers int, chunkKB int, showDyn bool, runs int, 
 			defer os.RemoveAll(output)
 			defer os.Remove(archivePath)
 
-			m, err := benchmark(archivePath, input, output)
+			m, err := benchmark(archivePath, input, output, originalSize)
 			if err != nil {
 				runErr = fmt.Errorf("%s run %d: %w", name, run+1, err)
 				return
@@ -486,6 +748,10 @@ func runRepeated(name string, workers int, chunkKB int, showDyn bool, runs int, 
 			compressTimes = append(compressTimes, m.Compress)
 			extractTimes = append(extractTimes, m.Extract)
 			archiveSizes = append(archiveSizes, m.ArchiveSize)
+			meanRAMs = append(meanRAMs, m.MeanRAMMB)
+			maxRAMs = append(maxRAMs, m.MaxRAMMB)
+			meanDisks = append(meanDisks, m.MeanDiskMBS)
+			maxDisks = append(maxDisks, m.MaxDiskMBS)
 		}()
 		if runErr != nil {
 			return runErr
@@ -500,6 +766,10 @@ func runRepeated(name string, workers int, chunkKB int, showDyn bool, runs int, 
 		ArchiveSize: medianInt64(archiveSizes),
 		Compress:    medianDuration(compressTimes),
 		Extract:     medianDuration(extractTimes),
+		MeanRAMMB:   medianFloat64(meanRAMs),
+		MaxRAMMB:    maxFloat64(maxRAMs),
+		MeanDiskMBS: medianFloat64(meanDisks),
+		MaxDiskMBS:  maxFloat64(maxDisks),
 	}, originalSize)
 	return nil
 }
@@ -564,13 +834,14 @@ func benchmarkDataset(binaryPath, inputRaw string, runs int, versions, codecs ma
 
 	fmt.Printf("\nDataset: %s\nOriginal size: %.2f MB\nRuns: %d\nV2 Chunk sizes (KB): %v\n\n",
 		inputPath, float64(originalSize)/(1024*1024), runs, chunkSizes)
-	fmt.Printf("%-18s %-8s %-9s %-12s %-12s %-12s %-12s %-12s %-12s\n",
+	fmt.Printf("%-18s %-8s %-9s %-11s %-11s %-11s %-9s %-11s %-12s %-12s %-12s %-13s %-13s\n",
 		"Format", "Workers", "Chunk KB", "Archive MB", "Compress s", "Extract s",
-		"Ratio %", "Comp MB/s", "Extract MB/s")
+		"Ratio %", "Comp MB/s", "Extract MB/s",
+		"Mean RAM MB", "Max RAM MB", "Mean Disk MB/s", "Max Disk MB/s")
 
 	pulsarBench := func(version int, codec string, cKB, workers int) Benchmark {
-		return func(a, i, o string) (RunMetrics, error) {
-			return runPulsar(binaryPath, a, i, o, version, codec, cKB, workers)
+		return func(a, i, o string, origSize int64) (RunMetrics, error) {
+			return runPulsar(binaryPath, a, i, o, origSize, version, codec, cKB, workers)
 		}
 	}
 
@@ -618,8 +889,8 @@ func benchmarkDataset(binaryPath, inputRaw string, runs int, versions, codecs ma
 	}
 
 	if baselines["zip"] && available["zip"] && available["unzip"] {
-		bench := func(a, i, o string) (RunMetrics, error) {
-			return benchmarkExternal(a, i, o, parent,
+		bench := func(a, i, o string, origSize int64) (RunMetrics, error) {
+			return benchmarkExternal(a, i, o, parent, origSize,
 				func(a, _, _ string) []string { return []string{"zip", "-q", "-r", "-6", a, base} },
 				func(a, _, o string) []string { return []string{"unzip", "-q", a, "-d", o} })
 		}
@@ -641,8 +912,8 @@ func benchmarkDataset(binaryPath, inputRaw string, runs int, versions, codecs ma
 				continue
 			}
 			mode := mode
-			bench := func(a, i, o string) (RunMetrics, error) {
-				return benchmarkExternal(a, i, o, parent,
+			bench := func(a, i, o string, origSize int64) (RunMetrics, error) {
+				return benchmarkExternal(a, i, o, parent, origSize,
 					func(a, _, _ string) []string {
 						args := []string{"7z", "a", "-y"}
 						args = append(args, mode.args...)
@@ -658,8 +929,8 @@ func benchmarkDataset(binaryPath, inputRaw string, runs int, versions, codecs ma
 
 	if baselines["pigz"] {
 		if available["tar"] && available["pigz"] {
-			bench := func(a, _, o string) (RunMetrics, error) {
-				return benchmarkExternal(a, inputPath, o, parent,
+			bench := func(a, _, o string, origSize int64) (RunMetrics, error) {
+				return benchmarkExternal(a, inputPath, o, parent, origSize,
 					func(a, _, _ string) []string {
 						return []string{"tar", "-I", "pigz -6", "-cf", a, "-C", parent, base}
 					},
@@ -671,8 +942,8 @@ func benchmarkDataset(binaryPath, inputRaw string, runs int, versions, codecs ma
 				return err
 			}
 		} else if available["tar"] && available["gzip"] {
-			bench := func(a, _, o string) (RunMetrics, error) {
-				return benchmarkExternal(a, inputPath, o, parent,
+			bench := func(a, _, o string, origSize int64) (RunMetrics, error) {
+				return benchmarkExternal(a, inputPath, o, parent, origSize,
 					func(a, _, _ string) []string {
 						return []string{"tar", "-czf", a, "-C", parent, base}
 					},
@@ -687,8 +958,8 @@ func benchmarkDataset(binaryPath, inputRaw string, runs int, versions, codecs ma
 	}
 
 	if baselines["zstd"] && available["tar"] && available["zstd"] {
-		bench := func(a, _, o string) (RunMetrics, error) {
-			return benchmarkExternal(a, inputPath, o, parent,
+		bench := func(a, _, o string, origSize int64) (RunMetrics, error) {
+			return benchmarkExternal(a, inputPath, o, parent, origSize,
 				func(a, _, _ string) []string {
 					return []string{"tar", "-I", "zstd -T0 -3", "-cf", a, "-C", parent, base}
 				},
@@ -744,7 +1015,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	workerCounts, err := parseIntList(*workersFlag, false)
+	workerCounts, err := parseIntList(*workersFlag, true)
 	if err != nil {
 		panic(err)
 	}

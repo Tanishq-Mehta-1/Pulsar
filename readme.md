@@ -98,34 +98,32 @@ plsr info backup.plsr
 
 ## Benchmarks
 
-All benchmarks were averaged over **3 runs** with full SHA-256 extraction verification enabled.
+Tested on a **5.33 GB** (`5,330.19 MB`) mixed dataset over **3-run medians** with full SHA-256 extraction verification enabled (`benchmarks/bench.go`).
 
-### 1. Large Dataset (`testdata5GB` — 5.33 GB / 5,330.19 MB)
+### Performance & Resource Summary
 
-Sustained disk-bound workload comparing Pulsar's optimal codec defaults against `tar + zstd (-T0 -3)` and `tar + pigz (-6)`:
-
-| Tool / Configuration | Workers | Chunk Size | Archive Size | Ratio | Compress | Comp Speed | Extract | Extract Speed |
+| Archiver | Workers | Chunk | Archive Size | Ratio | Comp MB/s | Extract MB/s | Max RAM | Max Disk |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`PulsarV2-zstd` (Fast)** | 6 | 2048 KB | 3,345.49 MB | 62.77% | **10.01s** | **532.41 MB/s** | **9.40s** | **566.98 MB/s** |
-| **`PulsarV2-zstd` (Balanced)** | 4 | 4096 KB | 3,296.44 MB | 61.84% | 10.63s | 501.40 MB/s | **9.03s** | **590.23 MB/s** |
-| **`PulsarV2-zstd` (Max Ratio)** | 4 | 8192 KB | 3,253.97 MB | 61.05% | 10.74s | 496.17 MB/s | 10.02s | 531.99 MB/s |
-| **`PulsarV2-deflate`** | 12 | 8192 KB | 3,352.94 MB | 62.90% | 12.99s | 410.32 MB/s | 13.03s | 409.11 MB/s |
-| `tar + zstd (-T0 -3)` | Auto | Stream | 3,186.66 MB | 59.79% | 10.52s | 506.87 MB/s | 10.23s | 521.16 MB/s |
-| `tar + pigz (-6)` | Auto | Stream | 3,246.94 MB | 60.92% | 28.72s | 185.57 MB/s | 20.83s | 255.84 MB/s |
+| **`PulsarV2-zstd`** | Auto (6) | 8 MB | 3,253.97 MB | 61.05% | **522.12** | **565.73** | 767.2 MB | **6,104.0 MB/s** |
+| **`PulsarV2-zstd`** | Auto (6) | 4 MB | 3,296.44 MB | 61.84% | 484.15 | 497.46 | 598.5 MB | 3,968.9 MB/s |
+| **`PulsarV2-deflate`** | Auto (12) | 4 MB | 3,354.78 MB | 62.94% | 359.88 | 417.68 | 486.4 MB | 3,606.9 MB/s |
+| `tar + zstd (-T0 -3)` | Auto | Stream | **3,186.66 MB** | **59.79%** | 492.24 | 510.17 | 153.6 MB | 2,634.6 MB/s |
+| `tar + pigz (-6)` | Auto | Stream | 3,246.94 MB | 60.92% | 180.01 | 249.17 | **18.1 MB** | 2,229.7 MB/s |
 
-### 2. Medium Dataset (`testdata655MB` — 655.35 MB)
+### Throughput Comparison (MB/s)
 
-Cache-resident workload comparing Pulsar V1 (file-level) and V2 (chunk-level) across optimal worker tiers:
+```text
+Compression (Higher is Better)
+PulsarV2-zstd (Auto, 8MB)   ████████████████████████████████████████▌ 522.12
+tar + zstd (-T0 -3)         ██████████████████████████████████████▏   492.24
+PulsarV2-deflate (Auto, 4MB)████████████████████████████              359.88
+tar + pigz (-6)             ██████████████                            180.01
 
-| Tool / Configuration | Workers | Chunk Size | Archive Size | Ratio | Compress | Comp Speed | Extract | Extract Speed |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`PulsarV2-zstd` (Max Extract)** | 4 | 1024 KB | 494.39 MB | 75.44% | 1.28s | 512.44 MB/s | **0.30s** | **2,208.32 MB/s** |
-| **`PulsarV2-zstd` (Fast Comp)** | 6 | 1024 KB | 494.39 MB | 75.44% | **1.10s** | **598.46 MB/s** | 0.31s | 2,090.76 MB/s |
-| **`PulsarV2-zstd` (Balanced)** | 6 | 8192 KB | 484.64 MB | 73.95% | 1.12s | 582.78 MB/s | 0.56s | 1,177.16 MB/s |
-| **`PulsarV1-zstd` (File-Level)** | 4 | Per-File | 480.95 MB | 73.39% | 1.68s | 389.15 MB/s | 0.45s | 1,470.44 MB/s |
-| **`PulsarV2-deflate`** | 12 | 4096 KB | 478.82 MB | 73.06% | 1.68s | 389.55 MB/s | 0.97s | 678.99 MB/s |
-| `tar + zstd (-T0 -3)` | Auto | Stream | 473.40 MB | 72.24% | 1.05s | 622.10 MB/s | 0.74s | 884.05 MB/s |
-| `tar + pigz (-6)` | Auto | Stream | 462.09 MB | 70.51% | 3.40s | 193.00 MB/s | 2.35s | 278.92 MB/s |
+Extraction (Higher is Better)
+PulsarV2-zstd (Auto, 8MB)   ████████████████████████████████████████▌ 565.73
+tar + zstd (-T0 -3)         ████████████████████████████████████▌     510.17
+PulsarV2-deflate (Auto, 4MB)█████████████████████████████▍            417.68
+tar + pigz (-6)             █████████████████▌                        249.17
 
 ### Key Takeaways
 
