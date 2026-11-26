@@ -735,7 +735,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	baselines, err := parseSelectionSet(*baselinesFlag, []string{"gozip", "zip", "7z-deflate", "7z-lzma2", "pigz", "zstd"})
+	baselines, err := parseSelectionSet(*baselinesFlag, []string{"gozip", "zip", "7z-deflate", "7z-lzma2", "7z-zstd", "pigz", "zstd", "tar-xz", "tar-lz4"})
 	if err != nil {
 		panic(err)
 	}

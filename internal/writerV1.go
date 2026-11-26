@@ -104,7 +104,7 @@ func (writer *ArchiveWriterV1) AddFilesConcurrent(
 	for _, file := range files {
 
 		switch file.Method {
-		case None, BestCompression, BestSpeed, Default, HuffmanOnly, Zstd:
+		case None, BestCompression, BestSpeed, Default, HuffmanOnly:
 		default:
 			return fmt.Errorf("WRITERV1::incorrect compression method: %d", file.Method)
 		}

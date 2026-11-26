@@ -14,6 +14,7 @@ import (
 type JobCompress struct {
 	Path              string
 	ArchivePath       string
+	Codec             uint8
 	CompressionMethod CompressionMethod
 }
 
@@ -92,8 +93,8 @@ func CompressFile(job JobCompress) (res ResultCompress) {
 	counter := &CountWriter{writer: temp}
 	hasher := crc32.NewIEEE()
 
-	switch job.CompressionMethod {
-	case None:
+	switch job.Codec {
+	case CodecStored:
 		multiWriter := io.MultiWriter(hasher, counter)
 
 		n, copyErr := io.Copy(multiWriter, file)
@@ -106,8 +107,9 @@ func CompressFile(job JobCompress) (res ResultCompress) {
 			res.Err = fmt.Errorf("COMPRESS::read %d bytes instead of %d", n, res.OriginalSize)
 			return
 		}
-	case Zstd:
-		n, copyErr := CompressZstdStream(counter, file, hasher)
+
+	case CodecZstd:
+		n, copyErr := CompressZstdStream(counter, file, hasher, job.CompressionMethod)
 		if copyErr != nil || n != int64(res.OriginalSize) {
 			if copyErr != nil {
 				res.Err = copyErr
@@ -117,7 +119,8 @@ func CompressFile(job JobCompress) (res ResultCompress) {
 			res.Err = fmt.Errorf("COMPRESS::read %d bytes instead of %d", n, res.OriginalSize)
 			return
 		}
-	default:
+
+	case CodecDeflate:
 		flateWriter, err := flate.NewWriter(counter, int(job.CompressionMethod))
 		if err != nil {
 			res.Err = err
@@ -141,6 +144,9 @@ func CompressFile(job JobCompress) (res ResultCompress) {
 			res.Err = err
 			return
 		}
+	default:
+		res.Err = fmt.Errorf("COMPRESS::invalid codec for job: %d", job.Codec)
+		return res
 	}
 
 	res.Checksum = hasher.Sum32()
@@ -196,7 +202,7 @@ func CompressChunk(job ChunkJob) (ChunkResult, error) {
 	case CodecZstd:
 
 		dst := getChunkBuffer(int(result.OriginalSize))
-		compressed := CompressZstd(job.Data, dst)
+		compressed := CompressZstd(job.Data, dst, job.Method)
 
 		result.Data = compressed
 		result.CompressedSize = uint64(len(compressed))

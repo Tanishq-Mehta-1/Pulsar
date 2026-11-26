@@ -225,7 +225,7 @@ func (reader *ArchiveReader) OpenArchive(
 				}
 
 				switch fileEntry.CompressionMethod {
-				case None, BestCompression, BestSpeed, HuffmanOnly, Default, Zstd:
+				case None, BestCompression, BestSpeed, HuffmanOnly, Default:
 				default:
 					return fmt.Errorf("READER::incorrect compression method")
 				}

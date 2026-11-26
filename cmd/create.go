@@ -121,7 +121,8 @@ func createV2(
 	outputDir string,
 	numWorkers int,
 	chunkSize uint32,
-	codec_str string) (err error) {
+	codec_str string,
+	preset archive.CompressionMethod) (err error) {
 
 	writer := archive.ArchiveWriterV2{}
 	if err := writer.CreateArchive(path, outputDir, chunkSize); err != nil {
@@ -149,7 +150,7 @@ func createV2(
 	fileEntries := make([]archive.FileStruct, len(files))
 
 	for i, file := range files {
-		fileEntries[i] = archive.FileStruct{Path: file, Method: archive.Default}
+		fileEntries[i] = archive.FileStruct{Path: file, Method: preset}
 	}
 
 	codec, err := archive.ParseCodec(codec_str)
@@ -162,7 +163,7 @@ func createV2(
 	}
 
 	for _, dir := range dirs {
-		if err := writer.AddDirectory(dir, numWorkers, codec); err != nil {
+		if err := writer.AddDirectory(dir, numWorkers, codec, preset); err != nil {
 			return fmt.Errorf("CREATE::%v", err)
 		}
 	}
@@ -191,7 +192,8 @@ func create(
 	version int,
 	numWorkers int,
 	chunkSize uint32,
-	codec string) (err error) {
+	codec string,
+	preset archive.CompressionMethod) (err error) {
 
 	if numWorkers < 0 {
 		return fmt.Errorf("CREATE::invalid worker count")

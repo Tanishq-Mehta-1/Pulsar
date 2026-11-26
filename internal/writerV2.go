@@ -157,7 +157,8 @@ func (writer *ArchiveWriterV2) AddFilesConcurrent(
 func (writer *ArchiveWriterV2) AddDirectory(
 	dirPath string,
 	numWorkers int,
-	codec uint8) error {
+	codec uint8,
+	mode CompressionMethod) error {
 
 	if !dirExists(dirPath) {
 		return fmt.Errorf("WRITERV2::error opening the directory")
@@ -197,7 +198,7 @@ func (writer *ArchiveWriterV2) AddDirectory(
 		files = append(files, FileStruct{
 			Path:        path,
 			ArchivePath: relPath,
-			Method:      Default})
+			Method:      mode})
 
 		return nil
 

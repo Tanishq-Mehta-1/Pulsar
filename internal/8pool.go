@@ -5,12 +5,12 @@ import (
 	"sync"
 )
 
-//Sync pool with 8 pools, one each for 64,128,256,512,1024,2048,4096 KB
+//Sync pool with 8 pools, one each for 64,128,256,512,1024,2048,4096,8192 KB
 
 const (
 	//bit shift
 	minPoolShift = 16
-	maxPoolShift = 22
+	maxPoolShift = 23
 	numPoolSizes = maxPoolShift - minPoolShift + 1
 )
 

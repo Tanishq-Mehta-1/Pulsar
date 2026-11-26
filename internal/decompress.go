@@ -59,31 +59,40 @@ func DecompressFile(
 	mw := io.MultiWriter(hasher, dst)
 
 	var n int64
-	switch entry.CompressionMethod {
+	switch entry.Codec {
 
-	case None:
+	case CodecStored:
 		n, err = io.Copy(mw, section)
 		if err != nil {
 			return err
 		}
 
-	case Default, BestCompression, BestSpeed, HuffmanOnly:
-		flateReader := flate.NewReader(section)
-		defer flateReader.Close()
+	case CodecDeflate:
+		switch entry.CompressionMethod {
+		case None:
+			n, err = io.Copy(mw, section)
+			if err != nil {
+				return err
+			}
 
-		n, err = io.Copy(mw, flateReader)
-		if err != nil {
-			return err
+		case Default, BestCompression, BestSpeed, HuffmanOnly:
+			flateReader := flate.NewReader(section)
+			defer flateReader.Close()
+
+			n, err = io.Copy(mw, flateReader)
+			if err != nil {
+				return err
+			}
+
+		default:
+			return fmt.Errorf("DECOMPRESS::incorrect compression method: %d", entry.CompressionMethod)
 		}
 
-	case Zstd:
+	case CodecZstd:
 		n, err = DecompressZstdStream(mw, section)
 		if err != nil {
 			return err
 		}
-
-	default:
-		return fmt.Errorf("DECOMPRESS::incorrect compression method: %d", entry.CompressionMethod)
 	}
 
 	if n != int64(entry.OriginalSize) {

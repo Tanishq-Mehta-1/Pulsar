@@ -383,7 +383,7 @@ func WriteArchiveV2(
 			continue
 		}
 
-		if res.CompressionMethod == None {
+		if res.Codec == CodecZstd {
 			putChunkBuffer(res.Data)
 		}
 

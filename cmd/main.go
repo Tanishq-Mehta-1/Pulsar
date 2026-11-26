@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	archive "pulsar/internal"
 	"strconv"
 )
 
@@ -100,6 +101,7 @@ func main() {
 		version := 1
 		chunkSize := 4096 //default 4MB
 		codec := "deflate"
+		preset := archive.Default
 		takingFiles := true
 
 		for i, n := 2, len(arguments); i < n; i++ {
@@ -134,6 +136,20 @@ func main() {
 				takingFiles = false
 				codec = arguments[i+1]
 				i++
+			} else if arg == "--preset" && i+1 < n {
+				takingFiles = false
+				switch arguments[i+1] {
+				case "balanced":
+					preset = archive.Default
+				case "max":
+					preset = archive.BestCompression
+				case "fast":
+					preset = archive.BestSpeed
+				default:
+					log.Fatal(fmt.Errorf("PLSR::CREATE::invalid preset value: %s", arguments[i+1]))
+				}
+
+				i++
 			} else if arg == "--chunk-size" && i+1 < n {
 				takingFiles = false
 				var err error
@@ -161,7 +177,7 @@ func main() {
 			}
 		}
 
-		if err := create(archivePath, files, dirs, outputDir, version, numWorkers, uint32(chunkSize), codec); err != nil {
+		if err := create(archivePath, files, dirs, outputDir, version, numWorkers, uint32(chunkSize), codec, archive.CompressionMethod); err != nil {
 			log.Fatal(fmt.Errorf("PLSR::%w", err))
 		}
 

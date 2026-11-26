@@ -3,6 +3,7 @@ package archive
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 )
 
 type CompressionMethod int8
@@ -17,12 +18,11 @@ const (
 	Default         CompressionMethod = -1
 	None            CompressionMethod = 0
 	BestSpeed       CompressionMethod = 1
-	Zstd            CompressionMethod = 2
 	BestCompression CompressionMethod = 9
 	HuffmanOnly     CompressionMethod = -2
 )
 
-const FileEntryLength int = 31
+const FileEntryLength int = 32
 
 // FileEntryLength + variable bytes
 type FileEntry struct {
@@ -34,6 +34,7 @@ type FileEntry struct {
 	CompressionMethod CompressionMethod //1 bytes
 	Checksum          uint32            //4 bytes
 	Type              EntryType         //1 byte
+	Codec             uint8             //1 byte
 }
 
 func SerializeFileEntry(entry *FileEntry) ([]byte, error) {
@@ -62,6 +63,7 @@ func SerializeFileEntry(entry *FileEntry) ([]byte, error) {
 	copy(buffer[25+filenameLen:26+filenameLen], []byte{(byte(entry.CompressionMethod))})
 	binary.BigEndian.PutUint32(buffer[26+filenameLen:30+filenameLen], entry.Checksum)
 	copy(buffer[30+filenameLen:31+filenameLen], []byte{(byte(entry.Type))})
+	copy(buffer[31+filenameLen:32+filenameLen], []byte{(byte(entry.Codec))})
 
 	return buffer, nil
 }
@@ -90,12 +92,19 @@ func DeserializeFileEntry(data []byte) (*FileEntry, int, error) {
 	compressionMethod := CompressionMethod(data[25+filenameLen : 26+filenameLen][0])
 	checksum := binary.BigEndian.Uint32(data[26+filenameLen : 30+filenameLen])
 	entryType := EntryType(data[30+filenameLen : FileEntryLength+int(filenameLen)][0])
+	codec := uint8(data[31+filenameLen : FileEntryLength+int(filenameLen)][0])
 
 	//validate compressionMethod
 	switch compressionMethod {
-	case None, Default, HuffmanOnly, BestSpeed, BestCompression, Zstd:
+	case None, Default, HuffmanOnly, BestSpeed, BestCompression:
 	default:
-		return nil, 0, errors.New("FILE_ENTRY::invalid compression method")
+		return nil, 0, fmt.Errorf("FILE_ENTRY::invalid compression method: %d", compressionMethod)
+	}
+
+	switch codec {
+	case CodecDeflate, CodecStored, CodecZstd:
+	default:
+		return nil, 0, fmt.Errorf("FILE_ENTRY::invalid codec: %d", codec)
 	}
 
 	//validate type
